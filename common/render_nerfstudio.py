@@ -18,7 +18,7 @@ except ImportError:
 
 
 from common.scene_release import ScannetppScene_Release
-from common.utils.colmap import Camera, read_model
+from common.utils.colmap import Camera
 from common.utils.utils import load_yaml_munch, read_txt_list
 
 Image = collections.namedtuple("Image", ["id", "world_to_camera", "camera_id", "name"])
@@ -56,26 +56,28 @@ def read_nerfstudio_model(path):
         raise ValueError(f"Unknown camera model: {camera_model}")
 
     camera = Camera(
+        id=0,
         width=width,
         height=height,
         model=camera_model,
         params=params,
     )
-    cameras = [camera]
-    images = []
+    cameras = {0: camera}
+    images = {}
 
     for i, frame in enumerate(data["frames"]):
         name = frame["file_path"]
 
         # Convert from nerfstudio to Colmap
         c2w = frame["transform_matrix"]
+        c2w = np.array(c2w)
         c2w[0:3, 1:3] *= -1
         c2w = c2w[np.array([1, 0, 2, 3]), :]
         c2w[2, :] *= -1
         w2c = np.linalg.inv(c2w)
 
         image = Image(id=i, world_to_camera=w2c, camera_id=0, name=name)
-        images.append(image)
+        images[i] = image
 
     return cameras, images
 
@@ -139,8 +141,8 @@ def main(args):
 
             near = cfg.get("near", 0.05)
             far = cfg.get("far", 20.0)
-            rgb_dir = Path(cfg.output_dir) / scene_id / device / "render_rgb"
-            depth_dir = Path(cfg.output_dir) / scene_id / device / "render_depth"
+            rgb_dir = output_dir / scene_id / device / "render_rgb"
+            depth_dir = output_dir / scene_id / device / "render_depth"
             rgb_dir.mkdir(parents=True, exist_ok=True)
             depth_dir.mkdir(parents=True, exist_ok=True)
             for image_id, image in tqdm(images.items(), f"Rendering {device} images"):
