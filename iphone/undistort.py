@@ -124,7 +124,7 @@ def main(args):
 
         input_mask_dir = cfg.get("input_mask_dir", None)
         if input_mask_dir is None:
-            input_mask_dir = scene.iphone_mask_dir
+            input_mask_dir = scene.iphone_video_mask_dir
         else:
             input_mask_dir = scene.iphone_data_dir / input_mask_dir
 
