@@ -146,10 +146,10 @@ def main(args):
             print("Uncompressing the images and masks...")
             is_compressed = True
             os.system(
-                f"mkdir -p {input_image_dir} && tar -xvf {scene.iphone_rgb_dir}.tar -C {input_image_dir}"
+                f"mkdir -p {input_image_dir} && tar -xf {scene.iphone_rgb_dir}.tar -C {input_image_dir}"
             )
             os.system(
-                f"mkdir -p {input_mask_dir} && tar -xvf {scene.iphone_video_mask_dir}.tar -C {input_mask_dir}"
+                f"mkdir -p {input_mask_dir} && tar -xf {scene.iphone_video_mask_dir}.tar -C {input_mask_dir}"
             )
 
         transforms = load_json(input_transforms_path)
