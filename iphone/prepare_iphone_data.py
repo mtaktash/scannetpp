@@ -29,10 +29,24 @@ def extract_rgb(scene):
     cmd = f"ffmpeg -i {scene.iphone_video_path} -start_number 0 -q:v 1 {scene.iphone_rgb_dir}/frame_%06d.jpg"
     run_command(cmd, verbose=True)
 
+    # compress the extracted images
+    cmd  = f"tar -cf {scene.iphone_data_dir}/rgb.tar {scene.iphone_rgb_dir}"
+    run_command(cmd, verbose=True)
+    
+    # clean up the extracted images
+    cmd = f"rm -rf {scene.iphone_rgb_dir}"
+    run_command(cmd, verbose=True)
+
 
 def extract_masks(scene):
     scene.iphone_video_mask_dir.mkdir(parents=True, exist_ok=True)
     cmd = f"ffmpeg -i {str(scene.iphone_video_mask_path)} -pix_fmt gray -start_number 0 {scene.iphone_video_mask_dir}/frame_%06d.png"
+    run_command(cmd, verbose=True)
+
+    cmd  = f"tar -cf {scene.iphone_data_dir}/masks.tar {scene.iphone_video_mask_dir}"
+    run_command(cmd, verbose=True)
+    
+    cmd = f"rm -rf {scene.iphone_video_mask_dir}"
     run_command(cmd, verbose=True)
 
 
@@ -86,6 +100,12 @@ def extract_depth(scene):
                 # 6 digit frame id = 277 minute video at 60 fps
                 iio.imwrite(f"{scene.iphone_depth_dir}/frame_{frame_id:06}.png", depth)
                 frame_id += 1
+
+    cmd  = f"tar -cf {scene.iphone_data_dir}/depth.tar {scene.iphone_depth_dir}"
+    run_command(cmd, verbose=True)
+
+    cmd = f"rm -rf {scene.iphone_depth_dir}"
+    run_command(cmd, verbose=True)
 
 
 def main(args):
