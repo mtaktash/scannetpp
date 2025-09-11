@@ -32,10 +32,6 @@ def extract_rgb(scene):
     # compress the extracted images
     cmd  = f"tar -cf {scene.iphone_rgb_dir}.tar -C {scene.iphone_rgb_dir} ."
     run_command(cmd, verbose=True)
-    
-    # clean up the extracted images
-    cmd = f"rm -rf {scene.iphone_rgb_dir}"
-    run_command(cmd, verbose=True)
 
 
 def extract_masks(scene):
@@ -46,9 +42,6 @@ def extract_masks(scene):
     cmd  = f"tar -cf {scene.iphone_video_mask_dir}.tar -C {scene.iphone_video_mask_dir} ."
     run_command(cmd, verbose=True)
     
-    cmd = f"rm -rf {scene.iphone_video_mask_dir}"
-    run_command(cmd, verbose=True)
-
 
 def extract_depth(scene):
     # global compression with zlib
@@ -104,6 +97,15 @@ def extract_depth(scene):
     cmd  = f"tar -cf {scene.iphone_depth_dir}.tar -C {scene.iphone_depth_dir} ."
     run_command(cmd, verbose=True)
 
+    
+    
+def cleanup_extracted(scene):
+    cmd = f"rm -rf {scene.iphone_rgb_dir}"
+    run_command(cmd, verbose=True)
+    
+    cmd = f"rm -rf {scene.iphone_video_mask_dir}"
+    run_command(cmd, verbose=True)
+    
     cmd = f"rm -rf {scene.iphone_depth_dir}"
     run_command(cmd, verbose=True)
 
@@ -135,18 +137,22 @@ def main(args):
 
         if cfg.extract_depth:
             extract_depth(scene)
+            
+        if cfg.extract_rgb and cfg.prepare_nerfstudio_transforms:
+            train_list = scene.iphone_rgb_dir.glob("*.jpg")
+            train_list = [x.name for x in train_list]
+            train_list.sort()
 
-        train_list = scene.iphone_rgb_dir.glob("*.jpg")
-        train_list = [x.name for x in train_list]
-        train_list.sort()
-
-        prepare_transforms_json(
-            model_path=scene.iphone_colmap_dir,
-            out_path=scene.iphone_nerfstudio_transform_path,
-            train_list=train_list,
-            test_list=[],
-            has_mask=True,
-        )
+            prepare_transforms_json(
+                model_path=scene.iphone_colmap_dir,
+                out_path=scene.iphone_nerfstudio_transform_path,
+                train_list=train_list,
+                test_list=[],
+                has_mask=True,
+            )
+        
+        if cfg.cleanup_extracted:
+            cleanup_extracted(scene)
 
 
 if __name__ == "__main__":

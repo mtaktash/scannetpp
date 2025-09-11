@@ -2,13 +2,17 @@
 # extract RGB frames
 extract_rgb: true
 # extract anonymization masks
-extract_masks: true
+extract_masks: false
 # extract depth frames
-extract_depth: true
+extract_depth: false
+# cleanup the extracted images and masks after compressing them
+cleanup_extracted: true
+# extract transforms.json
+prepare_nerfstudio_transforms: true
 
 # folder where the data is downloaded
-data_root: DATA_ROOT
+data_root: /home/mtaktash/scratch/scannetpp
 
 splits: [nvs_sem_train, nvs_sem_val]
 
-scene_ids: [ebff4de90b]
+# scene_ids: [07f5b601ee]

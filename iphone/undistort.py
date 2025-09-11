@@ -174,6 +174,12 @@ def main(args):
             ]
         )
 
+        # untar the images
+        print("Uncompressing the images and masks...")
+        os.system(f"tar -xf {scene.iphone_rgb_dir}.tar -C {input_image_dir}")
+        os.system(f"tar -xf {scene.iphone_video_mask_dir}.tar -C {input_mask_dir}")
+
+        print("Undistorting the images and masks...")
         new_K = undistort_frames(
             frames,
             K,
@@ -185,10 +191,24 @@ def main(args):
             out_image_dir,
             out_mask_dir,
         )
+        
+        print("Updating the transforms.json...")
         new_trasforms = update_transforms_json(transforms, new_K, height, width)
         out_transforms_path.parent.mkdir(parents=True, exist_ok=True)
         with open(out_transforms_path, "w") as f:
             json.dump(new_trasforms, f, indent=4)
+            
+        print("Compressing the undistorted images and masks...")
+        os.system(f"tar -cf {scene.iphone_data_dir}/rgb_undistorted.tar -C {out_image_dir} .")
+        os.system(f"tar -cf {scene.iphone_data_dir}/masks_undistorted.tar -C {out_mask_dir} .")
+
+        print("Cleaning up...")
+        os.system(f"rm -rf {input_image_dir}")
+        os.system(f"rm -rf {input_mask_dir}")
+        os.system(f"rm -rf {out_image_dir}")
+        os.system(f"rm -rf {out_mask_dir}")
+        
+        
 
 
 if __name__ == "__main__":
