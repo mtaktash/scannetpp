@@ -98,7 +98,6 @@ def extract_depth(scene):
     run_command(cmd, verbose=True)
 
     
-    
 def cleanup_extracted(scene):
     cmd = f"rm -rf {scene.iphone_rgb_dir}"
     run_command(cmd, verbose=True)

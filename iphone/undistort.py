@@ -173,11 +173,13 @@ def main(args):
                 [0, 0, 1],
             ]
         )
-
-        # untar the images
-        print("Uncompressing the images and masks...")
-        os.system(f"tar -xf {scene.iphone_rgb_dir}.tar -C {input_image_dir}")
-        os.system(f"tar -xf {scene.iphone_video_mask_dir}.tar -C {input_mask_dir}")
+        
+        is_compressed = False
+        if not input_image_dir.exists() and not input_mask_dir.exists():
+            print("Uncompressing the images and masks...")
+            is_compressed = True
+            os.system(f"mkdir -p {input_image_dir} && tar -xvf {scene.iphone_rgb_dir}.tar -C {input_image_dir}")
+            os.system(f"mkdir -p {input_mask_dir} && tar -xvf {scene.iphone_video_mask_dir}.tar -C {input_mask_dir}")
 
         print("Undistorting the images and masks...")
         new_K = undistort_frames(
@@ -197,18 +199,20 @@ def main(args):
         out_transforms_path.parent.mkdir(parents=True, exist_ok=True)
         with open(out_transforms_path, "w") as f:
             json.dump(new_trasforms, f, indent=4)
-            
-        print("Compressing the undistorted images and masks...")
-        os.system(f"tar -cf {scene.iphone_data_dir}/rgb_undistorted.tar -C {out_image_dir} .")
-        os.system(f"tar -cf {scene.iphone_data_dir}/masks_undistorted.tar -C {out_mask_dir} .")
+        
+        if is_compressed:
+            print("Compressing the undistorted images and masks...")
+            os.system(f"tar -cf {scene.iphone_data_dir}/rgb_undistorted.tar -C {out_image_dir} .")
+            os.system(f"tar -cf {scene.iphone_data_dir}/rgb_masks_undistorted.tar -C {out_mask_dir} .")
 
-        print("Cleaning up...")
-        os.system(f"rm -rf {input_image_dir}")
-        os.system(f"rm -rf {input_mask_dir}")
-        os.system(f"rm -rf {out_image_dir}")
-        os.system(f"rm -rf {out_mask_dir}")
-        
-        
+        if is_compressed:
+            print("Cleaning up...")
+            os.system(f"rm -rf {input_image_dir}")
+            os.system(f"rm -rf {input_mask_dir}")
+            os.system(f"rm -rf {out_image_dir}")
+            os.system(f"rm -rf {out_mask_dir}")
+            
+            
 
 
 if __name__ == "__main__":
