@@ -14,19 +14,22 @@ from common.utils.utils import load_yaml_munch, load_json, read_txt_list
 
 
 def compute_undistort_intrinsic(K, height, width, distortion_params):
+    """
+    K: (3,3) intrinsic matrix
+    distortion_params: [k1, k2, p1, p2]
+    """
     assert len(distortion_params.shape) == 1
-    assert distortion_params.shape[0] == 4  # OPENCV_FISHEYE has k1, k2, k3, k4
+    assert distortion_params.shape[0] == 4  # OPENCV has k1, k2, p1, p2
 
-    new_K = cv2.fisheye.estimateNewCameraMatrixForUndistortRectify(
-        K,
-        distortion_params,
-        (width, height),
-        np.eye(3),
-        balance=0.0,
-    )
+    # OpenCV wants (k1, k2, p1, p2[, k3, k4, k5, k6])
+    distCoeffs = np.zeros(5)
+    distCoeffs[:4] = distortion_params
+
+    new_K, _ = cv2.getOptimalNewCameraMatrix(K, distCoeffs, (width, height), alpha=0.0)
     # Make the cx and cy to be the center of the image
     new_K[0, 2] = width / 2.0
     new_K[1, 2] = height / 2.0
+
     return new_K
 
 
@@ -42,7 +45,7 @@ def undistort_frames(
     out_mask_dir,
 ):
     new_K = compute_undistort_intrinsic(K, height, width, distortion_params)
-    map1, map2 = cv2.fisheye.initUndistortRectifyMap(
+    map1, map2 = cv2.initUndistortRectifyMap(
         K, distortion_params, np.eye(3), new_K, (width, height), cv2.CV_32FC1
     )
 
@@ -94,7 +97,7 @@ def update_transforms_json(transforms, new_K, new_height, new_width):
     new_transforms["cy"] = new_K[1, 2]
     # The undistortion will be PINHOLE and have no distortion paramaters
     new_transforms["camera_model"] = "PINHOLE"
-    for key in ("k1", "k2", "k3", "k4"):
+    for key in ("k1", "k2", "p1", "p2"):
         if key in new_transforms:
             new_transforms[key] = 0.0
     return new_transforms
@@ -138,6 +141,17 @@ def main(args):
         out_mask_dir = scene.iphone_data_dir / cfg.out_mask_dir
         out_transforms_path = scene.iphone_data_dir / cfg.out_transforms_path
 
+        is_compressed = False
+        if not input_image_dir.exists() and not input_mask_dir.exists():
+            print("Uncompressing the images and masks...")
+            is_compressed = True
+            os.system(
+                f"mkdir -p {input_image_dir} && tar -xvf {scene.iphone_rgb_dir}.tar -C {input_image_dir}"
+            )
+            os.system(
+                f"mkdir -p {input_mask_dir} && tar -xvf {scene.iphone_video_mask_dir}.tar -C {input_mask_dir}"
+            )
+
         transforms = load_json(input_transforms_path)
         assert len(transforms["frames"]) > 0
         frames = deepcopy(transforms["frames"])
@@ -158,8 +172,8 @@ def main(args):
             [
                 float(transforms["k1"]),
                 float(transforms["k2"]),
-                float(transforms["k3"]),
-                float(transforms["k4"]),
+                float(transforms["p1"]),
+                float(transforms["p2"]),
             ]
         )
         fx = float(transforms["fl_x"])
@@ -173,13 +187,6 @@ def main(args):
                 [0, 0, 1],
             ]
         )
-        
-        is_compressed = False
-        if not input_image_dir.exists() and not input_mask_dir.exists():
-            print("Uncompressing the images and masks...")
-            is_compressed = True
-            os.system(f"mkdir -p {input_image_dir} && tar -xvf {scene.iphone_rgb_dir}.tar -C {input_image_dir}")
-            os.system(f"mkdir -p {input_mask_dir} && tar -xvf {scene.iphone_video_mask_dir}.tar -C {input_mask_dir}")
 
         print("Undistorting the images and masks...")
         new_K = undistort_frames(
@@ -193,17 +200,21 @@ def main(args):
             out_image_dir,
             out_mask_dir,
         )
-        
+
         print("Updating the transforms.json...")
         new_trasforms = update_transforms_json(transforms, new_K, height, width)
         out_transforms_path.parent.mkdir(parents=True, exist_ok=True)
         with open(out_transforms_path, "w") as f:
             json.dump(new_trasforms, f, indent=4)
-        
+
         if is_compressed:
             print("Compressing the undistorted images and masks...")
-            os.system(f"tar -cf {scene.iphone_data_dir}/rgb_undistorted.tar -C {out_image_dir} .")
-            os.system(f"tar -cf {scene.iphone_data_dir}/rgb_masks_undistorted.tar -C {out_mask_dir} .")
+            os.system(
+                f"tar -cf {scene.iphone_data_dir}/rgb_undistorted.tar -C {out_image_dir} ."
+            )
+            os.system(
+                f"tar -cf {scene.iphone_data_dir}/rgb_masks_undistorted.tar -C {out_mask_dir} ."
+            )
 
         if is_compressed:
             print("Cleaning up...")
@@ -211,8 +222,6 @@ def main(args):
             os.system(f"rm -rf {input_mask_dir}")
             os.system(f"rm -rf {out_image_dir}")
             os.system(f"rm -rf {out_mask_dir}")
-            
-            
 
 
 if __name__ == "__main__":

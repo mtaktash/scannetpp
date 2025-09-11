@@ -2,7 +2,7 @@
 # extract RGB frames
 extract_rgb: true
 # extract anonymization masks
-extract_masks: false
+extract_masks: true
 # extract depth frames
 extract_depth: false
 # cleanup the extracted images and masks after compressing them
@@ -15,4 +15,4 @@ data_root: /home/mtaktash/scratch/scannetpp
 
 splits: [nvs_sem_train, nvs_sem_val]
 
-# scene_ids: [07f5b601ee]
+scene_ids: [07f5b601ee]
