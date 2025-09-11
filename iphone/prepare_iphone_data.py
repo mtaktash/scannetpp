@@ -30,7 +30,7 @@ def extract_rgb(scene):
     run_command(cmd, verbose=True)
 
     # compress the extracted images
-    cmd  = f"tar -cf {scene.iphone_data_dir}/rgb.tar {scene.iphone_rgb_dir}"
+    cmd  = f"tar -cf {scene.iphone_rgb_dir}.tar -C {scene.iphone_rgb_dir} ."
     run_command(cmd, verbose=True)
     
     # clean up the extracted images
@@ -43,7 +43,7 @@ def extract_masks(scene):
     cmd = f"ffmpeg -i {str(scene.iphone_video_mask_path)} -pix_fmt gray -start_number 0 {scene.iphone_video_mask_dir}/frame_%06d.png"
     run_command(cmd, verbose=True)
 
-    cmd  = f"tar -cf {scene.iphone_data_dir}/masks.tar {scene.iphone_video_mask_dir}"
+    cmd  = f"tar -cf {scene.iphone_video_mask_dir}.tar -C {scene.iphone_video_mask_dir} ."
     run_command(cmd, verbose=True)
     
     cmd = f"rm -rf {scene.iphone_video_mask_dir}"
@@ -101,7 +101,7 @@ def extract_depth(scene):
                 iio.imwrite(f"{scene.iphone_depth_dir}/frame_{frame_id:06}.png", depth)
                 frame_id += 1
 
-    cmd  = f"tar -cf {scene.iphone_data_dir}/depth.tar {scene.iphone_depth_dir}"
+    cmd  = f"tar -cf {scene.iphone_depth_dir}.tar -C {scene.iphone_depth_dir} ."
     run_command(cmd, verbose=True)
 
     cmd = f"rm -rf {scene.iphone_depth_dir}"
