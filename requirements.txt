@@ -12,3 +12,5 @@ torchvision
 torchmetrics
 scipy
 open3d
+trimesh
+plyfile
