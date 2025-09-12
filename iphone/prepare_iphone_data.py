@@ -7,21 +7,17 @@ and semantic tasks on the mesh
 """
 
 import argparse
-from pathlib import Path
-import yaml
-from munch import Munch
-from tqdm import tqdm
-import json
-import sys
-import subprocess
 import zlib
-import numpy as np
+from pathlib import Path
+
 import imageio as iio
 import lz4.block
+import numpy as np
+from tqdm import tqdm
 
 from common.scene_release import ScannetppScene_Release
-from common.utils.utils import run_command, load_yaml_munch, load_json, read_txt_list
 from common.utils.nerfstudio import prepare_transforms_json
+from common.utils.utils import load_yaml_munch, read_txt_list, run_command
 
 
 def extract_rgb(scene):
@@ -30,7 +26,7 @@ def extract_rgb(scene):
     run_command(cmd, verbose=True)
 
     # compress the extracted images
-    cmd  = f"tar -cf {scene.iphone_rgb_dir}.tar -C {scene.iphone_rgb_dir} ."
+    cmd = f"tar -cf {scene.iphone_rgb_dir}.tar -C {scene.iphone_rgb_dir} ."
     run_command(cmd, verbose=True)
 
 
@@ -39,9 +35,11 @@ def extract_masks(scene):
     cmd = f"ffmpeg -i {str(scene.iphone_video_mask_path)} -pix_fmt gray -start_number 0 {scene.iphone_video_mask_dir}/frame_%06d.png"
     run_command(cmd, verbose=True)
 
-    cmd  = f"tar -cf {scene.iphone_video_mask_dir}.tar -C {scene.iphone_video_mask_dir} ."
+    cmd = (
+        f"tar -cf {scene.iphone_video_mask_dir}.tar -C {scene.iphone_video_mask_dir} ."
+    )
     run_command(cmd, verbose=True)
-    
+
 
 def extract_depth(scene):
     # global compression with zlib
@@ -94,17 +92,17 @@ def extract_depth(scene):
                 iio.imwrite(f"{scene.iphone_depth_dir}/frame_{frame_id:06}.png", depth)
                 frame_id += 1
 
-    cmd  = f"tar -cf {scene.iphone_depth_dir}.tar -C {scene.iphone_depth_dir} ."
+    cmd = f"tar -cf {scene.iphone_depth_dir}.tar -C {scene.iphone_depth_dir} ."
     run_command(cmd, verbose=True)
 
-    
+
 def cleanup_extracted(scene):
     cmd = f"rm -rf {scene.iphone_rgb_dir}"
     run_command(cmd, verbose=True)
-    
+
     cmd = f"rm -rf {scene.iphone_video_mask_dir}"
     run_command(cmd, verbose=True)
-    
+
     cmd = f"rm -rf {scene.iphone_depth_dir}"
     run_command(cmd, verbose=True)
 
@@ -128,28 +126,38 @@ def main(args):
     for scene_id in tqdm(scene_ids, desc="scene"):
         scene = ScannetppScene_Release(scene_id, data_root=Path(cfg.data_root) / "data")
 
-        if cfg.extract_rgb:
+        if cfg.extract_rgb and not (
+            scene.iphone_rgb_dir.with_suffix(".tar").exists()
+            and scene.iphone_nerfstudio_transform_path.exists()
+        ):
+
             extract_rgb(scene)
 
-        if cfg.extract_masks:
+            if cfg.prepare_nerfstudio_transforms:
+                train_list = scene.iphone_rgb_dir.glob("*.jpg")
+                train_list = [x.name for x in train_list]
+                train_list.sort()
+
+                prepare_transforms_json(
+                    model_path=scene.iphone_colmap_dir,
+                    out_path=scene.iphone_nerfstudio_transform_path,
+                    train_list=train_list,
+                    test_list=[],
+                    has_mask=True,
+                )
+
+        if (
+            cfg.extract_masks
+            and not scene.iphone_video_mask_dir.with_suffix(".tar").exists()
+        ):
             extract_masks(scene)
 
-        if cfg.extract_depth:
+        if (
+            cfg.extract_depth
+            and not scene.iphone_depth_dir.with_suffix(".tar").exists()
+        ):
             extract_depth(scene)
-            
-        if cfg.extract_rgb and cfg.prepare_nerfstudio_transforms:
-            train_list = scene.iphone_rgb_dir.glob("*.jpg")
-            train_list = [x.name for x in train_list]
-            train_list.sort()
 
-            prepare_transforms_json(
-                model_path=scene.iphone_colmap_dir,
-                out_path=scene.iphone_nerfstudio_transform_path,
-                train_list=train_list,
-                test_list=[],
-                has_mask=True,
-            )
-        
         if cfg.cleanup_extracted:
             cleanup_extracted(scene)
 

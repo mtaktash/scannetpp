@@ -5,3 +5,5 @@ splits: [nvs_sem_train, nvs_sem_val]
 
 scene_ids: [07f5b601ee]
 
+height: 384
+width: 518

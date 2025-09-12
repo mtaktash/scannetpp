@@ -144,6 +144,14 @@ def main(args):
         if not input_image_dir.exists() and not input_mask_dir.exists():
             print("Uncompressing the images and masks...")
             is_compressed = True
+
+            # if (
+            #     Path(scene.iphone_data_dir / "rgb_undistorted.tar").exists()
+            #     and Path(scene.iphone_data_dir / "rgb_masks_undistorted.tar").exists()
+            # ):
+            #     print(f"Skipping {scene_id}, already processed")
+            #     continue
+
             os.system(
                 f"mkdir -p {input_image_dir} && tar -xf {scene.iphone_rgb_dir}.tar -C {input_image_dir}"
             )

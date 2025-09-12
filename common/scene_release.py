@@ -185,3 +185,24 @@ class ScannetppScene_Release:
     @property
     def iphone_exif_path(self):
         return self.iphone_data_dir / "exif.json"
+
+    ######## Planar (only iPhone is supported) ########
+    @property
+    def planar_dir(self):
+        return self.data_root / self._scene_id / "planar"
+
+    @property
+    def planar_mesh_path(self):
+        return self.planar_dir / "planar_mesh_aligned_0.05.ply"
+
+    @property
+    def planar_ids_path(self):
+        return self.planar_dir / "planar_mesh_aligned_0.05_ids.npy"
+
+    @property
+    def planar_renders_dir(self):
+        return self.planar_dir / "renders"
+
+    @property
+    def planar_hdf5_path(self):
+        return self.planar_dir / "data.hdf5"
