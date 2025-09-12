@@ -1,16 +1,15 @@
 import argparse
-import os
-import tempfile
-from pathlib import Path
 import json
+import os
 from copy import deepcopy
+from pathlib import Path
 
-import numpy as np
 import cv2
+import numpy as np
 from tqdm import tqdm
 
 from common.scene_release import ScannetppScene_Release
-from common.utils.utils import load_yaml_munch, load_json, read_txt_list
+from common.utils.utils import load_json, load_yaml_munch, read_txt_list
 
 
 def compute_undistort_intrinsic(K, height, width, distortion_params):
