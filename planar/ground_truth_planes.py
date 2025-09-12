@@ -48,9 +48,7 @@ def process_scene_planar_mesh(scene: ScannetppScene_Release):
     all_planes = []
 
     offset = 0
-    for group in tqdm(
-        group_segments, total=len(group_segments), desc=f"Processing {scene_id}"
-    ):
+    for group in group_segments:
         group = np.array(group).astype(np.int32)
 
         segment_indices = group.copy()
@@ -192,10 +190,7 @@ def process_scene_planar_mesh_renders(
 
     for split in ["frames", "test_frames"]:
 
-        for frame in tqdm(
-            transforms[split],
-            desc=f"Rendering frames {split} for scene {scene_id}",
-        ):
+        for frame in transforms[split]:
             world_T_cam = np.array(frame["transform_matrix"])
             cam_T_world = nerfstudio_to_colmap(world_T_cam)
             cam_T_world_b44 = torch.tensor(cam_T_world, dtype=torch.float32).unsqueeze(
