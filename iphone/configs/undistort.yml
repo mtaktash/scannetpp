@@ -3,7 +3,7 @@ data_root: /home/mtaktash/scratch/scannetpp
 
 splits: [nvs_sem_train, nvs_sem_val]
 
-scene_ids: [07f5b601ee]
+# scene_ids: [07f5b601ee]
 
 # The following paths should be given relative to the DATA_ROOT/iphone/
 # If not given, will use the default directory defined in ScannetppScene class

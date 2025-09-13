@@ -147,7 +147,7 @@ def main(args):
         if cfg.extract_rgb:
             extract_rgb(scene)
 
-            if cfg.prepare_nerfstudio_transforms:
+            if cfg.extract_nerfstudio_transforms:
 
                 # every 10th image as train (as in transforms)
                 train_list = sorted(scene.iphone_rgb_dir.glob("*.jpg"))
