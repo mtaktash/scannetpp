@@ -196,8 +196,8 @@ class ScannetppScene_Release:
         return self.planar_dir / "planar_mesh_aligned_0.05.ply"
 
     @property
-    def planar_ids_path(self):
-        return self.planar_dir / "planar_mesh_aligned_0.05_ids.npy"
+    def planar_params_path(self):
+        return self.planar_dir / "planar_mesh_aligned_0.05_params.npy"
 
     @property
     def planar_renders_dir(self):

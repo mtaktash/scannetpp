@@ -4,7 +4,6 @@ from pathlib import Path
 
 import cv2
 import h5py
-import matplotlib.pyplot as plt
 import numpy as np
 import open3d as o3d
 import torch
@@ -110,8 +109,8 @@ def process_scene_planar_mesh(scene: ScannetppScene_Release):
     output_mesh_path.parent.mkdir(parents=True, exist_ok=True)
     o3d.io.write_triangle_mesh(str(output_mesh_path), combined_mesh)
 
-    planes_path = scene.planar_ids_path
-    np.save(planes_path, combined_planes)
+    planar_params_path = scene.planar_params_path
+    np.save(planar_params_path, combined_planes)
 
 
 def process_scene_planar_mesh_renders(
@@ -256,11 +255,11 @@ def process_scene_hdf5(
     hdf5_path = scene.planar_hdf5_path
     with h5py.File(hdf5_path, "w") as f:
 
-        plane_ids = np.load(scene.planar_ids_path)  # (num_planes, 4)
+        plane_params = np.load(scene.planar_params_path)  # (num_planes, 4)
 
         # same for all images
         f.create_dataset("intrinsics", data=K)
-        f.create_dataset("plane_ids", data=plane_ids)
+        f.create_dataset("plane_params", data=plane_params)
 
         for split in ["frames", "test_frames"]:
             frames = transforms[split]
@@ -274,7 +273,7 @@ def process_scene_hdf5(
             )
             poses = np.empty((len(frames), 4, 4), dtype=np.float32)
 
-            for i, frame in tqdm(enumerate(frames)):
+            for i, frame in enumerate(frames):
 
                 frame_path = frame["file_path"]
                 frame_name = Path(frame_path).stem
