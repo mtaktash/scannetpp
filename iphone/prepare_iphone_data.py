@@ -25,8 +25,14 @@ def extract_rgb(scene):
     cmd = f"ffmpeg -i {scene.iphone_video_path} -start_number 0 -q:v 1 {scene.iphone_rgb_dir}/frame_%06d.jpg"
     run_command(cmd, verbose=True)
 
+    frames = sorted(scene.iphone_rgb_dir.glob("frame_*.jpg"))
+    frames = frames[::10]  # every 10th frame
+    frames = [f.name for f in frames]
+
     # compress the extracted images
-    cmd = f"tar -cf {scene.iphone_rgb_dir}.tar -C {scene.iphone_rgb_dir} ."
+    cmd = f"tar -cf {scene.iphone_rgb_dir}.tar -C {scene.iphone_rgb_dir} " + " ".join(
+        frames
+    )
     run_command(cmd, verbose=True)
 
 
@@ -35,8 +41,13 @@ def extract_masks(scene):
     cmd = f"ffmpeg -i {str(scene.iphone_video_mask_path)} -pix_fmt gray -start_number 0 {scene.iphone_video_mask_dir}/frame_%06d.png"
     run_command(cmd, verbose=True)
 
+    frames = sorted(scene.iphone_video_mask_dir.glob("frame_*.png"))
+    frames = frames[::10]  # every 10th frame
+    frames = [f.name for f in frames]
+
     cmd = (
-        f"tar -cf {scene.iphone_video_mask_dir}.tar -C {scene.iphone_video_mask_dir} ."
+        f"tar -cf {scene.iphone_video_mask_dir}.tar -C {scene.iphone_video_mask_dir} "
+        + " ".join(frames)
     )
     run_command(cmd, verbose=True)
 
@@ -92,7 +103,14 @@ def extract_depth(scene):
                 iio.imwrite(f"{scene.iphone_depth_dir}/frame_{frame_id:06}.png", depth)
                 frame_id += 1
 
-    cmd = f"tar -cf {scene.iphone_depth_dir}.tar -C {scene.iphone_depth_dir} ."
+    frames = sorted(scene.iphone_video_mask_dir.glob("frame_*.png"))
+    frames = frames[::10]  # every 10th frame
+    frames = [f.name for f in frames]
+
+    cmd = (
+        f"tar -cf {scene.iphone_depth_dir}.tar -C {scene.iphone_depth_dir} "
+        + " ".join(frames)
+    )
     run_command(cmd, verbose=True)
 
 
@@ -126,17 +144,15 @@ def main(args):
     for scene_id in tqdm(scene_ids, desc="scene"):
         scene = ScannetppScene_Release(scene_id, data_root=Path(cfg.data_root) / "data")
 
-        if cfg.extract_rgb and not (
-            scene.iphone_rgb_dir.with_suffix(".tar").exists()
-            and scene.iphone_nerfstudio_transform_path.exists()
-        ):
-
+        if cfg.extract_rgb:
             extract_rgb(scene)
 
             if cfg.prepare_nerfstudio_transforms:
-                train_list = scene.iphone_rgb_dir.glob("*.jpg")
+
+                # every 10th image as train (as in transforms)
+                train_list = sorted(scene.iphone_rgb_dir.glob("*.jpg"))
                 train_list = [x.name for x in train_list]
-                train_list.sort()
+                train_list = train_list[::10]
 
                 prepare_transforms_json(
                     model_path=scene.iphone_colmap_dir,
@@ -146,16 +162,10 @@ def main(args):
                     has_mask=True,
                 )
 
-        if (
-            cfg.extract_masks
-            and not scene.iphone_video_mask_dir.with_suffix(".tar").exists()
-        ):
+        if cfg.extract_masks:
             extract_masks(scene)
 
-        if (
-            cfg.extract_depth
-            and not scene.iphone_depth_dir.with_suffix(".tar").exists()
-        ):
+        if cfg.extract_depth:
             extract_depth(scene)
 
         if cfg.cleanup_extracted:

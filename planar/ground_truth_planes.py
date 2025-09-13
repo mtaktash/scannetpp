@@ -117,8 +117,6 @@ def process_scene_planar_mesh(scene: ScannetppScene_Release):
 def process_scene_planar_mesh_renders(
     scene: ScannetppScene_Release, height: int, width: int
 ):
-    scene_id = scene.scene_id
-
     planar_renders_dir = scene.planar_renders_dir
     planar_renders_dir.mkdir(exist_ok=True, parents=True)
 
@@ -219,7 +217,9 @@ def process_scene_planar_mesh_renders(
     run_command(f"rm -rf {planar_renders_dir}", verbose=True)
 
 
-def process_scene_hdf5(scene: ScannetppScene_Release):
+def process_scene_hdf5(
+    scene: ScannetppScene_Release, planar_height: int, planar_width: int
+):
     transforms = load_json(scene.iphone_nerfstudio_transform_undistorted_path)
 
     height = int(transforms["h"])
@@ -240,20 +240,12 @@ def process_scene_hdf5(scene: ScannetppScene_Release):
         ]
     )
 
-    frames = transforms["frames"]
-    test_frames = transforms["test_frames"]
-
-    temp_image_dir = scene.iphone_data_dir / "undistorted_images"
-    temp_mask_dir = scene.iphone_data_dir / "undistorted_anon_masks"
+    temp_images_dir = scene.iphone_data_dir / "undistorted_images"
     temp_renders_dir = scene.planar_renders_dir
 
-    # Unpack the tar files
+    # Unpack the tar files for undistorted images and planar renders
     run_command(
-        f"mkdir -p {temp_image_dir} && tar -xf {scene.iphone_rgb_dir}.tar -C {temp_image_dir}",
-        verbose=True,
-    )
-    run_command(
-        f"mkdir -p {temp_mask_dir} && tar -xf {scene.iphone_video_mask_dir}.tar -C {temp_mask_dir}",
+        f"mkdir -p {temp_images_dir} && tar -xf {scene.iphone_data_dir}/rgb_undistorted.tar -C {temp_images_dir}",
         verbose=True,
     )
     run_command(
@@ -264,67 +256,39 @@ def process_scene_hdf5(scene: ScannetppScene_Release):
     hdf5_path = scene.planar_hdf5_path
     with h5py.File(hdf5_path, "w") as f:
 
+        plane_ids = np.load(scene.planar_ids_path)  # (num_planes, 4)
+
         # same for all images
         f.create_dataset("intrinsics", data=K)
-        f.create_dataset("plane_ids", data=np.load(scene.planar_ids_path))
+        f.create_dataset("plane_ids", data=plane_ids)
 
-        # train splits
-        f.create_dataset(
-            "frames", shape=(len(frames), height, width, 4), dtype=np.uint8
-        )
-        f.create_dataset("depths", shape=(len(frames), height, width), dtype=np.float32)
-        f.create_dataset("planes", shape=(len(frames), height, width), dtype=np.int16)
-        f.create_dataset("poses", shape=(len(frames), 4, 4), dtype=np.float32)
+        for split in ["frames", "test_frames"]:
+            frames = transforms[split]
 
-        # test splits
-        f.create_dataset(
-            "test_frames", shape=(len(test_frames), height, width, 4), dtype=np.uint8
-        )
-        f.create_dataset(
-            "test_depths", shape=(len(test_frames), height, width), dtype=np.float32
-        )
-        f.create_dataset(
-            "test_planes",
-            shape=(len(test_frames), height, width),
-            dtype=np.int16,
-        )
-        f.create_dataset("test_poses", shape=(len(test_frames), 4, 4), dtype=np.float32)
+            images = np.empty((len(frames), height, width, 3), dtype=np.uint8)
+            depths = np.empty(
+                (len(frames), planar_height, planar_width), dtype=np.float32
+            )
+            planes = np.empty(
+                (len(frames), planar_height, planar_width), dtype=np.int16
+            )
+            poses = np.empty((len(frames), 4, 4), dtype=np.float32)
 
-        for split in ["train", "test"]:
-            if split == "train":
-                split_frames = frames
-                split_dset_frames = f["frames"]
-                split_dset_depths = f["depths"]
-                split_dset_planes = f["planes"]
-                split_dset_poses = f["poses"]
-
-            else:
-                split_frames = test_frames
-                split_dset_frames = f["test_frames"]
-                split_dset_depths = f["test_depths"]
-                split_dset_planes = f["test_planes"]
-                split_dset_poses = f["test_poses"]
-
-            for i, frame in enumerate(split_frames):
+            for i, frame in tqdm(enumerate(frames)):
 
                 frame_path = frame["file_path"]
                 frame_name = Path(frame_path).stem
 
-                # Load image and mask
-                img_path = temp_image_dir / frame_path
-                mask_path = temp_mask_dir / frame_path
+                # Load image
+                img_path = temp_images_dir / frame_path
                 img = cv2.imread(str(img_path))
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
-
-                # H, W, 4
-                img_rgba = np.concatenate([img, np.expand_dims(mask, axis=-1)], axis=-1)
-                split_dset_frames[i] = img_rgba
+                images[i] = img
 
                 # Load depth
                 depth_path = temp_renders_dir / f"{frame_name}_depth.npy"
                 depth = np.load(depth_path)
-                split_dset_depths[i] = depth
+                depths[i] = depth
 
                 # Load plane ids
                 plane_render_path = temp_renders_dir / f"{frame_name}_planes.png"
@@ -333,15 +297,23 @@ def process_scene_hdf5(scene: ScannetppScene_Release):
                 plane_render = cv2.cvtColor(plane_render, cv2.COLOR_BGR2RGB)
                 plane_colors = plane_render[..., :3].astype(np.int64)
                 plane_ids = decode_planar_colors(plane_colors).astype(np.int16)
-                split_dset_planes[i] = plane_ids
+                planes[i] = plane_ids
 
                 # Load pose
                 transform_matrix = np.array(frame["transform_matrix"], dtype=np.float32)
-                split_dset_poses[i] = transform_matrix
+                poses[i] = transform_matrix
+
+            prefix = ""
+            if split == "test_frames":
+                prefix = "test_"
+
+            f.create_dataset(f"{prefix}frames", data=images)
+            f.create_dataset(f"{prefix}depths", data=depths)
+            f.create_dataset(f"{prefix}planes", data=planes)
+            f.create_dataset(f"{prefix}poses", data=poses)
 
     # Clean up temporary directories
-    run_command(f"rm -rf {temp_image_dir}", verbose=True)
-    run_command(f"rm -rf {temp_mask_dir}", verbose=True)
+    run_command(f"rm -rf {temp_images_dir}", verbose=True)
     run_command(f"rm -rf {temp_renders_dir}", verbose=True)
 
 
@@ -366,7 +338,7 @@ def main(args):
 
         process_scene_planar_mesh(scene)
         process_scene_planar_mesh_renders(scene, height=cfg.height, width=cfg.width)
-        process_scene_hdf5(scene)
+        process_scene_hdf5(scene, planar_height=cfg.height, planar_width=cfg.width)
 
 
 if __name__ == "__main__":

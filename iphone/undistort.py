@@ -9,7 +9,7 @@ import numpy as np
 from tqdm import tqdm
 
 from common.scene_release import ScannetppScene_Release
-from common.utils.utils import load_json, load_yaml_munch, read_txt_list
+from common.utils.utils import load_json, load_yaml_munch, read_txt_list, run_command
 
 
 def compute_undistort_intrinsic(K, height, width, distortion_params):
@@ -142,22 +142,13 @@ def main(args):
 
         is_compressed = False
         if not input_image_dir.exists() and not input_mask_dir.exists():
-            print("Uncompressing the images and masks...")
             is_compressed = True
 
-            # if (
-            #     Path(scene.iphone_data_dir / "rgb_undistorted.tar").exists()
-            #     and Path(scene.iphone_data_dir / "rgb_masks_undistorted.tar").exists()
-            # ):
-            #     print(f"Skipping {scene_id}, already processed")
-            #     continue
+            cmd = f"mkdir -p {input_image_dir} && tar -xf {scene.iphone_rgb_dir}.tar -C {input_image_dir}"
+            run_command(cmd, verbose=True)
 
-            os.system(
-                f"mkdir -p {input_image_dir} && tar -xf {scene.iphone_rgb_dir}.tar -C {input_image_dir}"
-            )
-            os.system(
-                f"mkdir -p {input_mask_dir} && tar -xf {scene.iphone_video_mask_dir}.tar -C {input_mask_dir}"
-            )
+            cmd = f"mkdir -p {input_mask_dir} && tar -xf {scene.iphone_video_mask_dir}.tar -C {input_mask_dir}"
+            run_command(cmd, verbose=True)
 
         transforms = load_json(input_transforms_path)
         assert len(transforms["frames"]) > 0
@@ -195,7 +186,6 @@ def main(args):
             ]
         )
 
-        print("Undistorting the images and masks...")
         new_K = undistort_frames(
             frames,
             K,
@@ -208,27 +198,27 @@ def main(args):
             out_mask_dir,
         )
 
-        print("Updating the transforms.json...")
         new_trasforms = update_transforms_json(transforms, new_K, height, width)
         out_transforms_path.parent.mkdir(parents=True, exist_ok=True)
         with open(out_transforms_path, "w") as f:
             json.dump(new_trasforms, f, indent=4)
 
         if is_compressed:
-            print("Compressing the undistorted images and masks...")
-            os.system(
-                f"tar -cf {scene.iphone_data_dir}/rgb_undistorted.tar -C {out_image_dir} ."
+            run_command(
+                f"tar -cf {scene.iphone_data_dir}/rgb_undistorted.tar -C {out_image_dir} .",
+                verbose=True,
             )
-            os.system(
-                f"tar -cf {scene.iphone_data_dir}/rgb_masks_undistorted.tar -C {out_mask_dir} ."
+            run_command(
+                f"tar -cf {scene.iphone_data_dir}/rgb_masks_undistorted.tar -C {out_mask_dir} .",
+                verbose=True,
             )
 
         if is_compressed:
             print("Cleaning up...")
-            os.system(f"rm -rf {input_image_dir}")
-            os.system(f"rm -rf {input_mask_dir}")
-            os.system(f"rm -rf {out_image_dir}")
-            os.system(f"rm -rf {out_mask_dir}")
+            run_command(f"rm -rf {input_image_dir}", verbose=True)
+            run_command(f"rm -rf {input_mask_dir}", verbose=True)
+            run_command(f"rm -rf {out_image_dir}", verbose=True)
+            run_command(f"rm -rf {out_mask_dir}", verbose=True)
 
 
 if __name__ == "__main__":
