@@ -1,5 +1,6 @@
 import argparse
 import json
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import cv2
@@ -15,9 +16,9 @@ from tqdm.auto import tqdm
 
 from common.scene_release import ScannetppScene_Release
 from common.utils.utils import load_json, load_yaml_munch, read_txt_list, run_command
+from planar.utils.encoding import decode_planar_colors, get_planar_colormap
 from planar.utils.mesh import planar_segmentation
 from planar.utils.renders import nerfstudio_to_colmap, process_frame
-from planar.utils.encoding import get_planar_colormap, decode_planar_colors
 
 
 def process_scene_planar_mesh(scene: ScannetppScene_Release):
@@ -316,6 +317,13 @@ def process_scene_hdf5(
     run_command(f"rm -rf {temp_renders_dir}", verbose=True)
 
 
+def process_one_scene(scene_id, cfg):
+    scene = ScannetppScene_Release(scene_id, data_root=Path(cfg.data_root) / "data")
+    process_scene_planar_mesh(scene)
+    process_scene_planar_mesh_renders(scene, height=cfg.height, width=cfg.width)
+    process_scene_hdf5(scene, planar_height=cfg.height, planar_width=cfg.width)
+
+
 def main(args):
     cfg = load_yaml_munch(args.config_file)
 
@@ -332,12 +340,19 @@ def main(args):
 
     # get the options to process
     # go through each scene
-    for scene_id in tqdm(scene_ids, desc="scene"):
-        scene = ScannetppScene_Release(scene_id, data_root=Path(cfg.data_root) / "data")
+    # for scene_id in tqdm(scene_ids, desc="scene"):
+    #     scene = ScannetppScene_Release(scene_id, data_root=Path(cfg.data_root) / "data")
 
-        process_scene_planar_mesh(scene)
-        process_scene_planar_mesh_renders(scene, height=cfg.height, width=cfg.width)
-        process_scene_hdf5(scene, planar_height=cfg.height, planar_width=cfg.width)
+    #     process_scene_planar_mesh(scene)
+    #     process_scene_planar_mesh_renders(scene, height=cfg.height, width=cfg.width)
+    #     process_scene_hdf5(scene, planar_height=cfg.height, planar_width=cfg.width)
+
+    with ProcessPoolExecutor(max_workers=4) as executor:
+        futures = {
+            executor.submit(process_one_scene, sid, cfg): sid for sid in scene_ids
+        }
+        for f in tqdm(as_completed(futures), total=len(futures), desc="scene"):
+            f.result()
 
 
 if __name__ == "__main__":

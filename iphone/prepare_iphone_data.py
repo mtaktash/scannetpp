@@ -8,6 +8,7 @@ and semantic tasks on the mesh
 
 import argparse
 import zlib
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import imageio as iio
@@ -22,7 +23,7 @@ from common.utils.utils import load_yaml_munch, read_txt_list, run_command
 
 def extract_rgb(scene):
     scene.iphone_rgb_dir.mkdir(parents=True, exist_ok=True)
-    cmd = f"ffmpeg -i {scene.iphone_video_path} -start_number 0 -q:v 1 {scene.iphone_rgb_dir}/frame_%06d.jpg"
+    cmd = f"ffmpeg -loglevel warning -i {scene.iphone_video_path} -start_number 0 -q:v 1 {scene.iphone_rgb_dir}/frame_%06d.jpg"
     run_command(cmd, verbose=True)
 
     frames = sorted(scene.iphone_rgb_dir.glob("frame_*.jpg"))
@@ -38,7 +39,7 @@ def extract_rgb(scene):
 
 def extract_masks(scene):
     scene.iphone_video_mask_dir.mkdir(parents=True, exist_ok=True)
-    cmd = f"ffmpeg -i {str(scene.iphone_video_mask_path)} -pix_fmt gray -start_number 0 {scene.iphone_video_mask_dir}/frame_%06d.png"
+    cmd = f"ffmpeg -loglevel warning -i {str(scene.iphone_video_mask_path)} -pix_fmt gray -start_number 0 {scene.iphone_video_mask_dir}/frame_%06d.png"
     run_command(cmd, verbose=True)
 
     frames = sorted(scene.iphone_video_mask_dir.glob("frame_*.png"))
@@ -125,6 +126,37 @@ def cleanup_extracted(scene):
     run_command(cmd, verbose=True)
 
 
+def process_one_scene(scene_id, cfg):
+    scene = ScannetppScene_Release(scene_id, data_root=Path(cfg.data_root) / "data")
+
+    if cfg.extract_rgb:
+        extract_rgb(scene)
+
+        if cfg.extract_nerfstudio_transforms:
+
+            # every 10th image as train (as in transforms)
+            train_list = sorted(scene.iphone_rgb_dir.glob("*.jpg"))
+            train_list = [x.name for x in train_list]
+            train_list = train_list[::10]
+
+            prepare_transforms_json(
+                model_path=scene.iphone_colmap_dir,
+                out_path=scene.iphone_nerfstudio_transform_path,
+                train_list=train_list,
+                test_list=[],
+                has_mask=True,
+            )
+
+    if cfg.extract_masks:
+        extract_masks(scene)
+
+    if cfg.extract_depth:
+        extract_depth(scene)
+
+    if cfg.cleanup_extracted:
+        cleanup_extracted(scene)
+
+
 def main(args):
     cfg = load_yaml_munch(args.config_file)
 
@@ -141,35 +173,15 @@ def main(args):
 
     # get the options to process
     # go through each scene
-    for scene_id in tqdm(scene_ids, desc="scene"):
-        scene = ScannetppScene_Release(scene_id, data_root=Path(cfg.data_root) / "data")
+    # for scene_id in tqdm(scene_ids, desc="scene"):
+    #     process_one_scene(scene_id, cfg)
 
-        if cfg.extract_rgb:
-            extract_rgb(scene)
-
-            if cfg.extract_nerfstudio_transforms:
-
-                # every 10th image as train (as in transforms)
-                train_list = sorted(scene.iphone_rgb_dir.glob("*.jpg"))
-                train_list = [x.name for x in train_list]
-                train_list = train_list[::10]
-
-                prepare_transforms_json(
-                    model_path=scene.iphone_colmap_dir,
-                    out_path=scene.iphone_nerfstudio_transform_path,
-                    train_list=train_list,
-                    test_list=[],
-                    has_mask=True,
-                )
-
-        if cfg.extract_masks:
-            extract_masks(scene)
-
-        if cfg.extract_depth:
-            extract_depth(scene)
-
-        if cfg.cleanup_extracted:
-            cleanup_extracted(scene)
+    with ProcessPoolExecutor(max_workers=4) as executor:
+        futures = {
+            executor.submit(process_one_scene, sid, cfg): sid for sid in scene_ids
+        }
+        for f in tqdm(as_completed(futures), total=len(futures), desc="scene"):
+            f.result()
 
 
 if __name__ == "__main__":

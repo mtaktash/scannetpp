@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from copy import deepcopy
 from pathlib import Path
 
@@ -102,6 +103,111 @@ def update_transforms_json(transforms, new_K, new_height, new_width):
     return new_transforms
 
 
+def process_one_scene(scene_id, cfg):
+    scene = ScannetppScene_Release(scene_id, data_root=Path(cfg.data_root) / "data")
+    input_image_dir = cfg.get("input_image_dir", None)
+    if input_image_dir is None:
+        input_image_dir = scene.iphone_rgb_dir
+    else:
+        input_image_dir = scene.iphone_data_dir / input_image_dir
+
+    input_mask_dir = cfg.get("input_mask_dir", None)
+    if input_mask_dir is None:
+        input_mask_dir = scene.iphone_video_mask_dir
+    else:
+        input_mask_dir = scene.iphone_data_dir / input_mask_dir
+
+    input_transforms_path = cfg.get("input_transforms_path", None)
+    if input_transforms_path is None:
+        input_transforms_path = scene.iphone_nerfstudio_transform_path
+    else:
+        input_transforms_path = scene.iphone_data_dir / input_transforms_path
+
+    out_image_dir = scene.iphone_data_dir / cfg.out_image_dir
+    out_mask_dir = scene.iphone_data_dir / cfg.out_mask_dir
+    out_transforms_path = scene.iphone_data_dir / cfg.out_transforms_path
+
+    is_compressed = False
+    if not input_image_dir.exists() and not input_mask_dir.exists():
+        is_compressed = True
+
+        cmd = f"mkdir -p {input_image_dir} && tar -xf {scene.iphone_rgb_dir}.tar -C {input_image_dir}"
+        run_command(cmd, verbose=True)
+
+        cmd = f"mkdir -p {input_mask_dir} && tar -xf {scene.iphone_video_mask_dir}.tar -C {input_mask_dir}"
+        run_command(cmd, verbose=True)
+
+    transforms = load_json(input_transforms_path)
+    assert len(transforms["frames"]) > 0
+    frames = deepcopy(transforms["frames"])
+    if "test_frames" not in transforms or len(transforms["test_frames"]) == 0:
+        print(f"{scene_id} has no test split")
+    elif not (input_image_dir / transforms["test_frames"][0]["file_path"]).exists():
+        print(
+            f"{scene_id} test image not found. Might due to the scene belonging to testing scenes. "
+            "The resizing will skip those images."
+        )
+    else:
+        assert len(transforms["test_frames"]) > 0
+        frames += transforms["test_frames"]
+
+    height = int(transforms["h"])
+    width = int(transforms["w"])
+    distortion_params = np.array(
+        [
+            float(transforms["k1"]),
+            float(transforms["k2"]),
+            float(transforms["p1"]),
+            float(transforms["p2"]),
+        ]
+    )
+    fx = float(transforms["fl_x"])
+    fy = float(transforms["fl_y"])
+    cx = float(transforms["cx"])
+    cy = float(transforms["cy"])
+    K = np.array(
+        [
+            [fx, 0, cx],
+            [0, fy, cy],
+            [0, 0, 1],
+        ]
+    )
+
+    new_K = undistort_frames(
+        frames,
+        K,
+        height,
+        width,
+        distortion_params,
+        input_image_dir,
+        input_mask_dir,
+        out_image_dir,
+        out_mask_dir,
+    )
+
+    new_trasforms = update_transforms_json(transforms, new_K, height, width)
+    out_transforms_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_transforms_path, "w") as f:
+        json.dump(new_trasforms, f, indent=4)
+
+    if is_compressed:
+        run_command(
+            f"tar -cf {scene.iphone_data_dir}/rgb_undistorted.tar -C {out_image_dir} .",
+            verbose=True,
+        )
+        run_command(
+            f"tar -cf {scene.iphone_data_dir}/rgb_masks_undistorted.tar -C {out_mask_dir} .",
+            verbose=True,
+        )
+
+    if is_compressed:
+        print("Cleaning up...")
+        run_command(f"rm -rf {input_image_dir}", verbose=True)
+        run_command(f"rm -rf {input_mask_dir}", verbose=True)
+        run_command(f"rm -rf {out_image_dir}", verbose=True)
+        run_command(f"rm -rf {out_mask_dir}", verbose=True)
+
+
 def main(args):
     cfg = load_yaml_munch(args.config_file)
 
@@ -116,109 +222,15 @@ def main(args):
 
     # get the options to process
     # go through each scene
-    for scene_id in tqdm(scene_ids, desc="scene"):
-        scene = ScannetppScene_Release(scene_id, data_root=Path(cfg.data_root) / "data")
-        input_image_dir = cfg.get("input_image_dir", None)
-        if input_image_dir is None:
-            input_image_dir = scene.iphone_rgb_dir
-        else:
-            input_image_dir = scene.iphone_data_dir / input_image_dir
+    # for scene_id in tqdm(scene_ids, desc="scene"):
+    #     process_one_scene(scene_id, cfg)
 
-        input_mask_dir = cfg.get("input_mask_dir", None)
-        if input_mask_dir is None:
-            input_mask_dir = scene.iphone_video_mask_dir
-        else:
-            input_mask_dir = scene.iphone_data_dir / input_mask_dir
-
-        input_transforms_path = cfg.get("input_transforms_path", None)
-        if input_transforms_path is None:
-            input_transforms_path = scene.iphone_nerfstudio_transform_path
-        else:
-            input_transforms_path = scene.iphone_data_dir / input_transforms_path
-
-        out_image_dir = scene.iphone_data_dir / cfg.out_image_dir
-        out_mask_dir = scene.iphone_data_dir / cfg.out_mask_dir
-        out_transforms_path = scene.iphone_data_dir / cfg.out_transforms_path
-
-        is_compressed = False
-        if not input_image_dir.exists() and not input_mask_dir.exists():
-            is_compressed = True
-
-            cmd = f"mkdir -p {input_image_dir} && tar -xf {scene.iphone_rgb_dir}.tar -C {input_image_dir}"
-            run_command(cmd, verbose=True)
-
-            cmd = f"mkdir -p {input_mask_dir} && tar -xf {scene.iphone_video_mask_dir}.tar -C {input_mask_dir}"
-            run_command(cmd, verbose=True)
-
-        transforms = load_json(input_transforms_path)
-        assert len(transforms["frames"]) > 0
-        frames = deepcopy(transforms["frames"])
-        if "test_frames" not in transforms or len(transforms["test_frames"]) == 0:
-            print(f"{scene_id} has no test split")
-        elif not (input_image_dir / transforms["test_frames"][0]["file_path"]).exists():
-            print(
-                f"{scene_id} test image not found. Might due to the scene belonging to testing scenes. "
-                "The resizing will skip those images."
-            )
-        else:
-            assert len(transforms["test_frames"]) > 0
-            frames += transforms["test_frames"]
-
-        height = int(transforms["h"])
-        width = int(transforms["w"])
-        distortion_params = np.array(
-            [
-                float(transforms["k1"]),
-                float(transforms["k2"]),
-                float(transforms["p1"]),
-                float(transforms["p2"]),
-            ]
-        )
-        fx = float(transforms["fl_x"])
-        fy = float(transforms["fl_y"])
-        cx = float(transforms["cx"])
-        cy = float(transforms["cy"])
-        K = np.array(
-            [
-                [fx, 0, cx],
-                [0, fy, cy],
-                [0, 0, 1],
-            ]
-        )
-
-        new_K = undistort_frames(
-            frames,
-            K,
-            height,
-            width,
-            distortion_params,
-            input_image_dir,
-            input_mask_dir,
-            out_image_dir,
-            out_mask_dir,
-        )
-
-        new_trasforms = update_transforms_json(transforms, new_K, height, width)
-        out_transforms_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(out_transforms_path, "w") as f:
-            json.dump(new_trasforms, f, indent=4)
-
-        if is_compressed:
-            run_command(
-                f"tar -cf {scene.iphone_data_dir}/rgb_undistorted.tar -C {out_image_dir} .",
-                verbose=True,
-            )
-            run_command(
-                f"tar -cf {scene.iphone_data_dir}/rgb_masks_undistorted.tar -C {out_mask_dir} .",
-                verbose=True,
-            )
-
-        if is_compressed:
-            print("Cleaning up...")
-            run_command(f"rm -rf {input_image_dir}", verbose=True)
-            run_command(f"rm -rf {input_mask_dir}", verbose=True)
-            run_command(f"rm -rf {out_image_dir}", verbose=True)
-            run_command(f"rm -rf {out_mask_dir}", verbose=True)
+    with ProcessPoolExecutor(max_workers=4) as executor:
+        futures = {
+            executor.submit(process_one_scene, sid, cfg): sid for sid in scene_ids
+        }
+        for f in tqdm(as_completed(futures), total=len(futures), desc="scene"):
+            f.result()
 
 
 if __name__ == "__main__":
