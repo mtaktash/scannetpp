@@ -338,6 +338,10 @@ def main(args):
             split_path = Path(cfg.data_root) / "splits" / f"{split}.txt"
             scene_ids += read_txt_list(split_path)
 
+    if cfg.get("scene_exclude_list_file"):
+        exclude_scene_ids = read_txt_list(cfg.scene_exclude_list_file)
+        scene_ids = [sid for sid in scene_ids if sid not in exclude_scene_ids]
+
     # get the options to process
     # go through each scene
     # for scene_id in tqdm(scene_ids, desc="scene"):
