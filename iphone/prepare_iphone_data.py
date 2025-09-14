@@ -170,7 +170,7 @@ def main(args):
         for split in cfg.splits:
             split_path = Path(cfg.data_root) / "splits" / f"{split}.txt"
             scene_ids += read_txt_list(split_path)
-            
+
     if cfg.get("scene_exclude_list_file"):
         exclude_scene_ids = read_txt_list(cfg.scene_exclude_list_file)
         scene_ids = [sid for sid in scene_ids if sid not in exclude_scene_ids]
@@ -180,7 +180,7 @@ def main(args):
     # for scene_id in tqdm(scene_ids, desc="scene"):
     #     process_one_scene(scene_id, cfg)
 
-    with ProcessPoolExecutor(max_workers=4) as executor:
+    with ProcessPoolExecutor(max_workers=16) as executor:
         futures = {
             executor.submit(process_one_scene, sid, cfg): sid for sid in scene_ids
         }
