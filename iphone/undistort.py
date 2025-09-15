@@ -127,10 +127,8 @@ def process_one_scene(scene_id, cfg):
     out_mask_dir = scene.iphone_data_dir / cfg.out_mask_dir
     out_transforms_path = scene.iphone_data_dir / cfg.out_transforms_path
 
-    is_compressed = False
-    if not input_image_dir.exists() and not input_mask_dir.exists():
-        is_compressed = True
-
+    is_compressed = True
+    if is_compressed:
         cmd = f"mkdir -p {input_image_dir} && tar -xf {scene.iphone_rgb_dir}.tar -C {input_image_dir}"
         run_command(cmd, verbose=True)
 

@@ -22,8 +22,6 @@ from planar.utils.renders import nerfstudio_to_colmap, process_frame
 
 
 def process_scene_planar_mesh(scene: ScannetppScene_Release):
-    scene_id = scene.scene_id
-
     filename = scene.scan_anno_json_path
     data = json.load(open(filename, "r"))
     aggregation = np.array(data["segGroups"])

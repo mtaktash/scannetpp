@@ -180,7 +180,7 @@ def main(args):
     # for scene_id in tqdm(scene_ids, desc="scene"):
     #     process_one_scene(scene_id, cfg)
 
-    with ProcessPoolExecutor(max_workers=16) as executor:
+    with ProcessPoolExecutor(max_workers=12) as executor:
         futures = {
             executor.submit(process_one_scene, sid, cfg): sid for sid in scene_ids
         }
