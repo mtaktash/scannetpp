@@ -1,6 +1,7 @@
 import argparse
 import json
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
 import cv2
@@ -8,6 +9,7 @@ import h5py
 import numpy as np
 import open3d as o3d
 import torch
+import torch.multiprocessing as mp
 import trimesh
 from plyfile import PlyData
 from pytorch3d.renderer import RasterizationSettings, TexturesVertex
@@ -317,7 +319,12 @@ def process_scene_hdf5(
 
 def process_one_scene(scene_id, cfg):
     scene = ScannetppScene_Release(scene_id, data_root=Path(cfg.data_root) / "data")
-    process_scene_planar_mesh(scene)
+
+    if scene.planar_params_path.exists():
+        print(f"Scene {scene_id} mesh already processed, skipping...")
+    else:
+        process_scene_planar_mesh(scene)
+
     process_scene_planar_mesh_renders(scene, height=cfg.height, width=cfg.width)
     process_scene_hdf5(scene, planar_height=cfg.height, planar_width=cfg.width)
 
@@ -340,24 +347,25 @@ def main(args):
         exclude_scene_ids = read_txt_list(cfg.scene_exclude_list_file)
         scene_ids = [sid for sid in scene_ids if sid not in exclude_scene_ids]
 
-    # get the options to process
-    # go through each scene
-    # for scene_id in tqdm(scene_ids, desc="scene"):
-    #     scene = ScannetppScene_Release(scene_id, data_root=Path(cfg.data_root) / "data")
-
-    #     process_scene_planar_mesh(scene)
-    #     process_scene_planar_mesh_renders(scene, height=cfg.height, width=cfg.width)
-    #     process_scene_hdf5(scene, planar_height=cfg.height, planar_width=cfg.width)
-
     with ProcessPoolExecutor(max_workers=4) as executor:
         futures = {
             executor.submit(process_one_scene, sid, cfg): sid for sid in scene_ids
         }
         for f in tqdm(as_completed(futures), total=len(futures), desc="scene"):
-            f.result()
+            sid = futures[f]
+            try:
+                f.result()
+            except BrokenProcessPool:
+                print(
+                    f"Scene {sid} failed with BrokenProcessPool (likely out of memory)"
+                )
+            except Exception as e:
+                print(f"Scene {sid} failed with {e}")
 
 
 if __name__ == "__main__":
+    mp.set_start_method("spawn", force=True)
+
     p = argparse.ArgumentParser()
     p.add_argument("config_file", help="Path to config file")
     args = p.parse_args()

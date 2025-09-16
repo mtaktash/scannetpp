@@ -5,6 +5,7 @@ splits: [nvs_sem_train, nvs_sem_val]
 
 # scene_ids: [07f5b601ee]
 # scene_list_file: /home/mtaktash/scannetpp/ids.txt
+scene_exclude_list_file: /home/mtaktash/scannetpp/exclude_ids_planar.txt
 
-height: 384
-width: 518
+height: 390
+width: 520
