@@ -1,7 +1,6 @@
 import argparse
 import json
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
 import cv2
@@ -254,7 +253,10 @@ def process_scene_hdf5(
     )
 
     hdf5_path = scene.planar_hdf5_path
-    with h5py.File(hdf5_path, "w") as f:
+    with h5py.File(hdf5_path, "w", libver="latest") as f:
+
+        # Enable SWMR mode
+        f.swmr_mode = True
 
         plane_params = np.load(scene.planar_params_path)  # (num_planes, 4)
 
@@ -348,15 +350,7 @@ def main(args):
             executor.submit(process_one_scene, sid, cfg): sid for sid in scene_ids
         }
         for f in tqdm(as_completed(futures), total=len(futures), desc="scene"):
-            sid = futures[f]
-            try:
-                f.result()
-            except BrokenProcessPool:
-                print(
-                    f"Scene {sid} failed with BrokenProcessPool (likely out of memory)"
-                )
-            except Exception as e:
-                print(f"Scene {sid} failed with {e}")
+            f.result()
 
 
 if __name__ == "__main__":
