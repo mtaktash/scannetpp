@@ -45,6 +45,13 @@ def cluster_planes(planes, eps=0.05, min_samples=5, cluster_size=100):
 
     return filtered_labels
 
+def pick_arbitrary_vector(normal):
+    normal = normal / np.linalg.norm(normal)
+    # pick axis with smallest absolute component to avoid near-parallel
+    idx = np.argmin(np.abs(normal))
+    arbitrary = np.zeros(3)
+    arbitrary[idx] = 1.0
+    return arbitrary
 
 def convex_hull_area_on_plane(points, plane):
     # Unpack plane parameters
@@ -54,10 +61,7 @@ def convex_hull_area_on_plane(points, plane):
 
     # Find two orthonormal vectors in the plane (local 2D basis)
     # v1: arbitrary vector not parallel to normal
-    if np.allclose(normal, [1, 0, 0]):
-        arbitrary = np.array([0, 1, 0])
-    else:
-        arbitrary = np.array([1, 0, 0])
+    arbitrary = pick_arbitrary_vector(normal)
 
     u = np.cross(normal, arbitrary)
     u /= np.linalg.norm(u)

@@ -320,11 +320,7 @@ def process_scene_hdf5(
 def process_one_scene(scene_id, cfg):
     scene = ScannetppScene_Release(scene_id, data_root=Path(cfg.data_root) / "data")
 
-    if scene.planar_params_path.exists():
-        print(f"Scene {scene_id} mesh already processed, skipping...")
-    else:
-        process_scene_planar_mesh(scene)
-
+    process_scene_planar_mesh(scene)
     process_scene_planar_mesh_renders(scene, height=cfg.height, width=cfg.width)
     process_scene_hdf5(scene, planar_height=cfg.height, planar_width=cfg.width)
 
