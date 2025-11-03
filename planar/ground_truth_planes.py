@@ -26,6 +26,32 @@ from planar.utils.mesh import planar_segmentation
 from planar.utils.renders import nerfstudio_to_colmap, process_frame
 
 
+def process_group(group, all_xyz, all_faces):
+    group = np.array(group).astype(np.int32)
+    segment_indices = group.copy()
+    xyz = all_xyz[segment_indices]
+
+    # Filter faces
+    faces = []
+    segment_set = set(segment_indices)
+    for face in all_faces:
+        if all(v in segment_set for v in face):
+            faces.append(face)
+    faces = np.array(faces)
+
+    # Renumber faces
+    face_map = {old: new for new, old in enumerate(segment_indices)}
+    faces = np.vectorize(face_map.get)(faces)
+
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector(xyz)
+    mesh.triangles = o3d.utility.Vector3iVector(faces)
+
+    # Apply segmentation
+    labels, planes = planar_segmentation(mesh)
+    return xyz, faces, labels, planes
+
+
 def process_scene_planar_mesh(scene: ScannetppScene_Release):
     filename = scene.scan_anno_json_path
     data = json.load(open(filename, "r"))
@@ -46,35 +72,29 @@ def process_scene_planar_mesh(scene: ScannetppScene_Release):
         group_segments.append(aggregation[segmentIndex]["segments"])
         group_labels.append(aggregation[segmentIndex]["label"])
 
+    results = []
+
+    with ProcessPoolExecutor(max_workers=8) as executor:
+        futures = {
+            executor.submit(process_group, group, all_xyz, all_faces): i
+            for i, group in enumerate(group_segments)
+        }
+        for f in tqdm(
+            as_completed(futures), total=len(futures), desc="planar segmentation"
+        ):
+            result = f.result()
+            results.append(result)
+
     all_meshes = []
     all_labels = []
     all_planes = []
 
     offset = 0
-    for group in tqdm(group_segments):
-        group = np.array(group).astype(np.int32)
-
-        segment_indices = group.copy()
-        xyz = all_xyz[segment_indices]
-
-        # Filter faces
-        faces = []
-        segment_set = set(segment_indices)
-        for face in all_faces:
-            if all(v in segment_set for v in face):
-                faces.append(face)
-        faces = np.array(faces)
-
-        # Renumber faces
-        face_map = {old: new for new, old in enumerate(segment_indices)}
-        faces = np.vectorize(face_map.get)(faces)
+    for xyz, faces, labels, planes in results:
 
         mesh = o3d.geometry.TriangleMesh()
         mesh.vertices = o3d.utility.Vector3dVector(xyz)
         mesh.triangles = o3d.utility.Vector3iVector(faces)
-
-        # Apply segmentation
-        labels, planes = planar_segmentation(mesh)
         all_meshes.append(mesh)
 
         # Remap labels

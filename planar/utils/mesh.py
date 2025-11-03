@@ -47,19 +47,16 @@ def planar_segmentation(
         while queue:
             tidx = queue.popleft()
 
-            avg_normal = np.mean(normals[region_triangles], axis=0)
-            avg_normal /= np.linalg.norm(avg_normal)
-
             for nidx in adj[tidx]:
                 if labels[nidx] != -1:
                     continue
 
                 # check normal angle
-                if np.abs(np.dot(avg_normal, normals[nidx])) < cos_thresh:
+                if np.abs(np.dot(normals[tidx], normals[nidx])) < cos_thresh:
                     continue
 
                 # check centroid distance
-                dist = np.abs(np.dot(avg_normal, centroids[nidx] - centroids[tidx]))
+                dist = np.abs(np.dot(normals[tidx], centroids[nidx] - centroids[tidx]))
                 if dist > dist_thresh:
                     continue
 
@@ -108,11 +105,54 @@ def planar_segmentation(
     planes = np.array(planes)
     assert planes.shape == (region_id, 4)
 
+    # Now merge planes with similar parameters
+    planes_new = []
+    merged_labels = -np.ones(region_id, dtype=int)
+    new_region_id = 0
+    for rid in range(region_id):
+        if merged_labels[rid] != -1:
+            continue
+
+        plane1 = planes[rid]
+        normal1 = plane1[:3]
+        d1 = plane1[3]
+
+        for other_rid in range(rid + 1, region_id):
+            if merged_labels[other_rid] != -1:
+                continue
+
+            plane2 = planes[other_rid]
+            normal2 = plane2[:3]
+            d2 = plane2[3]
+
+            # check normal angle
+            if np.abs(np.dot(normal1, normal2)) < cos_thresh:
+                continue
+
+            # check distance between planes
+            if np.abs(d1 - d2) > dist_thresh:
+                continue
+
+            merged_labels[other_rid] = new_region_id
+
+        merged_labels[rid] = new_region_id
+        new_region_id += 1
+        planes_new.append(plane1)
+
+    planes_new = np.array(planes_new)
+    assert planes_new.shape == (new_region_id, 4)
+
+    # Remap labels and planes
+    labels_new = labels.copy()
+    for rid in range(region_id):
+        if merged_labels[rid] != -1:
+            labels_new[labels == rid] = merged_labels[rid]
+
     # Now assign planes to vertices with majority voting
     n_vertices = len(vertices)
     vertex_votes = [[] for _ in range(n_vertices)]
     for tid, tri in enumerate(triangles):
-        lbl = int(labels[tid])
+        lbl = int(labels_new[tid])
         for vi in tri:
             vertex_votes[vi].append(lbl)
 
@@ -131,9 +171,9 @@ def planar_segmentation(
     # Gather plane equations for kept labels
     kept_labels = set(kept_labels)
     filtered_planes = []
-    for rid in range(region_id):
+    for rid in range(new_region_id):
         if rid in kept_labels:
-            filtered_planes.append(planes[rid])
+            filtered_planes.append(planes_new[rid])
     filtered_planes = np.array(filtered_planes)
 
     return vertex_labels, filtered_planes

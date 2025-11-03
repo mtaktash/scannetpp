@@ -1,10 +1,11 @@
 import argparse
 from pathlib import Path
 
-from planar.ground_truth_planes import process_scene_planar_mesh
+import torch.multiprocessing as mp
 
 from common.scene_release import ScannetppScene_Release
 from common.utils.utils import load_yaml_munch
+from planar.ground_truth_planes import process_scene_planar_mesh
 
 
 def main(args):
@@ -16,6 +17,8 @@ def main(args):
 
 
 if __name__ == "__main__":
+
+    mp.set_start_method("spawn", force=True)
 
     p = argparse.ArgumentParser()
     p.add_argument("config_file", help="Path to config file")
