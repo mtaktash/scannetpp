@@ -16,6 +16,13 @@ def get_planar_colormap(num_planes: int):
     return colormap
 
 
+def get_random_colormap(num_planes: int, seed: int = 42):
+    rng = np.random.default_rng(seed)
+    colormap = rng.integers(0, 256, size=(num_planes + 1, 3), dtype=np.int64)
+    colormap[-1] = 0
+    return colormap
+
+
 def decode_planar_colors(colors):
     plane_ids = colors[..., 0] * 256 * 256 + colors[..., 1] * 256 + colors[..., 2]
     plane_ids = plane_ids // 100 - 1

@@ -17,7 +17,11 @@ from tqdm.auto import tqdm
 
 from common.scene_release import ScannetppScene_Release
 from common.utils.utils import load_json, load_yaml_munch, read_txt_list, run_command
-from planar.utils.encoding import decode_planar_colors, get_planar_colormap
+from planar.utils.encoding import (
+    decode_planar_colors,
+    get_planar_colormap,
+    get_random_colormap,
+)
 from planar.utils.mesh import planar_segmentation
 from planar.utils.renders import nerfstudio_to_colmap, process_frame
 
@@ -47,7 +51,7 @@ def process_scene_planar_mesh(scene: ScannetppScene_Release):
     all_planes = []
 
     offset = 0
-    for group in group_segments:
+    for group in tqdm(group_segments):
         group = np.array(group).astype(np.int32)
 
         segment_indices = group.copy()
@@ -70,15 +74,14 @@ def process_scene_planar_mesh(scene: ScannetppScene_Release):
         mesh.triangles = o3d.utility.Vector3iVector(faces)
 
         # Apply segmentation
-        mesh, labels, planes = planar_segmentation(mesh)
+        labels, planes = planar_segmentation(mesh)
         all_meshes.append(mesh)
 
         # Remap labels
-        unique_planar_labels = np.unique(labels[labels != -1])
-        labels_map = {label: i + offset for i, label in enumerate(unique_planar_labels)}
+        unique_labels = np.unique(labels[labels != -1])
+        labels_map = {label: i + offset for i, label in enumerate(unique_labels)}
         labels_map[-1] = -1  # keep background label
-
-        remapped_labels = [labels_map[v] for v in labels]
+        remapped_labels = [labels_map[l] for l in labels]
 
         all_labels.extend(remapped_labels)
         all_planes.extend(planes)
@@ -94,7 +97,7 @@ def process_scene_planar_mesh(scene: ScannetppScene_Release):
 
     assert num_labels - 1 == num_planes
 
-    colormap = get_planar_colormap(num_planes)
+    colormap = get_random_colormap(num_planes)
 
     # Save all colored meshes to a single file
     combined_mesh = o3d.geometry.TriangleMesh()
