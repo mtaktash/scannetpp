@@ -7,8 +7,8 @@ import open3d as o3d
 def planar_segmentation(
     mesh: o3d.geometry.TriangleMesh,
     angle_thresh: float = 5.0,
-    dist_thresh: float = 0.001,  # 1 mm
-    region_min_size: float = 4e-2,  # 20x20 cm^2
+    dist_thresh: float = 0.01,  # 1 cm
+    region_min_size: float = 1e-2,  # 10x10 cm^2
 ):
 
     mesh.compute_triangle_normals()
@@ -68,6 +68,9 @@ def planar_segmentation(
 
     # Fit planes to each region
     planes = []
+    plane_centroids = []
+    remapped_labels = -np.ones(len(triangles), dtype=int)
+    new_region_id = 0
     for rid in range(region_id):
         region_mask = labels == rid
         pts = centroids[region_mask]
@@ -86,73 +89,70 @@ def planar_segmentation(
             total_area = 0.0
 
         # invalidate small regions (by area size in meter squared)
-        if total_area < region_min_size:
-            labels[region_mask] = -1  # invalidate small regions
-            plane = np.array([0, 0, 0, 0], dtype=np.float32)
+        if total_area >= region_min_size:
+            remapped_labels[region_mask] = new_region_id
+            new_region_id += 1
+
+            # Fit plane via least squares (PCA)
+            subset = np.random.choice(len(pts), size=min(1000, len(pts)), replace=False)
+            pts = pts[subset]
+
+            centroid = pts.mean(axis=0)
+            _, _, vh = np.linalg.svd(pts - centroid)
+            normal = vh[-1, :]
+            normal /= np.linalg.norm(normal)
+            d = -np.dot(normal, centroid)
+
+            plane = np.concatenate((normal, [d]), axis=0)
             planes.append(plane)
-            continue
-
-        # Fit plane via least squares (PCA)
-        centroid = pts.mean(axis=0)
-        _, _, vh = np.linalg.svd(pts - centroid)
-        normal = vh[-1, :]
-        normal /= np.linalg.norm(normal)
-        d = -np.dot(normal, centroid)
-
-        plane = np.concatenate((normal, [d]), axis=0)
-        planes.append(plane)
+            plane_centroids.append(centroid)
 
     planes = np.array(planes)
-    assert planes.shape == (region_id, 4)
 
     # Now merge planes with similar parameters
     planes_new = []
-    merged_labels = -np.ones(region_id, dtype=int)
+    merged_labels = -np.ones(len(planes), dtype=int)
     new_region_id = 0
-    for rid in range(region_id):
-        if merged_labels[rid] != -1:
+
+    unique_labels = np.unique(labels)
+
+    for i in range(len(planes)):
+        if merged_labels[i] != -1:
             continue
 
-        plane1 = planes[rid]
+        plane1 = planes[i]
         normal1 = plane1[:3]
-        d1 = plane1[3]
+        centroid1 = plane_centroids[i]
 
-        for other_rid in range(rid + 1, region_id):
-            if merged_labels[other_rid] != -1:
+        for j in range(i + 1, len(planes)):
+            if merged_labels[j] != -1:
                 continue
 
-            plane2 = planes[other_rid]
+            plane2 = planes[j]
             normal2 = plane2[:3]
-            d2 = plane2[3]
+            centroid2 = plane_centroids[j]
 
             # check normal angle
             if np.abs(np.dot(normal1, normal2)) < cos_thresh:
                 continue
 
             # check distance between planes
-            if np.abs(d1 - d2) > dist_thresh:
+            if np.abs(np.dot(centroid1 - centroid2, normal1)) > dist_thresh:
                 continue
 
-            merged_labels[other_rid] = new_region_id
+            merged_labels[j] = new_region_id
 
-        merged_labels[rid] = new_region_id
+        merged_labels[i] = new_region_id
         new_region_id += 1
         planes_new.append(plane1)
 
     planes_new = np.array(planes_new)
-    assert planes_new.shape == (new_region_id, 4)
-
-    # Remap labels and planes
-    labels_new = labels.copy()
-    for rid in range(region_id):
-        if merged_labels[rid] != -1:
-            labels_new[labels == rid] = merged_labels[rid]
 
     # Now assign planes to vertices with majority voting
     n_vertices = len(vertices)
     vertex_votes = [[] for _ in range(n_vertices)]
     for tid, tri in enumerate(triangles):
-        lbl = int(labels_new[tid])
+        lbl = int(labels[tid])
         for vi in tri:
             vertex_votes[vi].append(lbl)
 
@@ -169,9 +169,8 @@ def planar_segmentation(
         return vertex_labels, np.zeros((0, 4), dtype=np.float32)
 
     # Gather plane equations for kept labels
-    kept_labels = set(kept_labels)
     filtered_planes = []
-    for rid in range(new_region_id):
+    for rid in range(len(planes_new)):
         if rid in kept_labels:
             filtered_planes.append(planes_new[rid])
     filtered_planes = np.array(filtered_planes)

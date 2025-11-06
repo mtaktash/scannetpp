@@ -18,7 +18,7 @@ def get_planar_colormap(num_planes: int):
         ],
         axis=1,
     )
-    colormap[-1] = 255
+    colormap[-1] = 0
     return colormap
 
 

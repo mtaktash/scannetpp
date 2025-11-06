@@ -66,6 +66,14 @@ def process_scene_planar_mesh(scene: ScannetppScene_Release):
     all_xyz = points.reshape(-1, 3)
     all_faces = faces.copy()
 
+    # mesh = o3d.geometry.TriangleMesh()
+    # mesh.vertices = o3d.utility.Vector3dVector(all_xyz)
+    # mesh.triangles = o3d.utility.Vector3iVector(all_faces)
+    # mesh.compute_vertex_normals()
+    # mesh.compute_triangle_normals()
+
+    # all_normals = np.asarray(mesh.triangle_normals)
+
     group_segments = []
     group_labels = []
     for segmentIndex in range(len(aggregation)):
@@ -74,7 +82,7 @@ def process_scene_planar_mesh(scene: ScannetppScene_Release):
 
     results = []
 
-    with ProcessPoolExecutor(max_workers=8) as executor:
+    with ProcessPoolExecutor(max_workers=4) as executor:
         futures = {
             executor.submit(process_group, group, all_xyz, all_faces): i
             for i, group in enumerate(group_segments)
@@ -130,7 +138,7 @@ def process_scene_planar_mesh(scene: ScannetppScene_Release):
 
     output_mesh_path = scene.planar_mesh_path
     output_mesh_path.parent.mkdir(parents=True, exist_ok=True)
-    o3d.io.write_triangle_mesh(str(output_mesh_path), combined_mesh)
+    o3d.io.write_triangle_mesh(str(output_mesh_path), combined_mesh, write_ascii=True)
 
     planar_params_path = scene.planar_params_path
     np.save(planar_params_path, combined_planes)
