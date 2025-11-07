@@ -20,36 +20,33 @@ from common.utils.utils import load_json, load_yaml_munch, read_txt_list, run_co
 from planar.utils.encoding import (
     decode_planar_colors,
     get_planar_colormap,
-    get_random_colormap,
 )
 from planar.utils.mesh import planar_segmentation
 from planar.utils.renders import nerfstudio_to_colmap, process_frame
 
 
-def process_group(group, all_xyz, all_faces):
-    group = np.array(group).astype(np.int32)
-    segment_indices = group.copy()
-    xyz = all_xyz[segment_indices]
+def process_group(group, all_vertices, all_faces, all_normals):
+    vertices = all_vertices[group]
 
     # Filter faces
     faces = []
-    segment_set = set(segment_indices)
-    for face in all_faces:
+    normals = []
+    segment_set = set(group)
+    for face, normal in zip(all_faces, all_normals):
         if all(v in segment_set for v in face):
             faces.append(face)
+            normals.append(normal)
+
     faces = np.array(faces)
+    normals = np.array(normals)
 
     # Renumber faces
-    face_map = {old: new for new, old in enumerate(segment_indices)}
+    face_map = {old: new for new, old in enumerate(group)}
     faces = np.vectorize(face_map.get)(faces)
 
-    mesh = o3d.geometry.TriangleMesh()
-    mesh.vertices = o3d.utility.Vector3dVector(xyz)
-    mesh.triangles = o3d.utility.Vector3iVector(faces)
-
     # Apply segmentation
-    labels, planes = planar_segmentation(mesh)
-    return xyz, faces, labels, planes
+    labels, planes = planar_segmentation(vertices, faces, normals)
+    return vertices, faces, labels, planes
 
 
 def process_scene_planar_mesh(scene: ScannetppScene_Release):
@@ -60,19 +57,18 @@ def process_scene_planar_mesh(scene: ScannetppScene_Release):
     filename = scene.scan_sem_mesh_path
     plydata = PlyData.read(filename)
     vertices = plydata["vertex"]
-    points = np.stack([vertices["x"], vertices["y"], vertices["z"]], axis=1)
+    vertices = np.stack([vertices["x"], vertices["y"], vertices["z"]], axis=1)
     faces = np.array(plydata["face"]["vertex_indices"])
 
-    all_xyz = points.reshape(-1, 3)
-    all_faces = faces.copy()
+    vertices = vertices.reshape(-1, 3)
+    faces = faces.copy()
 
-    # mesh = o3d.geometry.TriangleMesh()
-    # mesh.vertices = o3d.utility.Vector3dVector(all_xyz)
-    # mesh.triangles = o3d.utility.Vector3iVector(all_faces)
-    # mesh.compute_vertex_normals()
-    # mesh.compute_triangle_normals()
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector(vertices)
+    mesh.triangles = o3d.utility.Vector3iVector(faces)
+    mesh.compute_triangle_normals()
 
-    # all_normals = np.asarray(mesh.triangle_normals)
+    normals = np.asarray(mesh.triangle_normals)
 
     group_segments = []
     group_labels = []
@@ -82,26 +78,19 @@ def process_scene_planar_mesh(scene: ScannetppScene_Release):
 
     results = []
 
-    with ProcessPoolExecutor(max_workers=4) as executor:
-        futures = {
-            executor.submit(process_group, group, all_xyz, all_faces): i
-            for i, group in enumerate(group_segments)
-        }
-        for f in tqdm(
-            as_completed(futures), total=len(futures), desc="planar segmentation"
-        ):
-            result = f.result()
-            results.append(result)
+    for group in group_segments:
+        result = process_group(group, vertices, faces, normals)
+        results.append(result)
 
     all_meshes = []
     all_labels = []
     all_planes = []
 
     offset = 0
-    for xyz, faces, labels, planes in results:
+    for vertices, faces, labels, planes in results:
 
         mesh = o3d.geometry.TriangleMesh()
-        mesh.vertices = o3d.utility.Vector3dVector(xyz)
+        mesh.vertices = o3d.utility.Vector3dVector(vertices)
         mesh.triangles = o3d.utility.Vector3iVector(faces)
         all_meshes.append(mesh)
 
@@ -125,7 +114,7 @@ def process_scene_planar_mesh(scene: ScannetppScene_Release):
 
     assert num_labels - 1 == num_planes
 
-    colormap = get_random_colormap(num_planes)
+    colormap = get_planar_colormap(num_planes)
 
     # Save all colored meshes to a single file
     combined_mesh = o3d.geometry.TriangleMesh()
@@ -354,8 +343,13 @@ def process_one_scene(scene_id, cfg):
     scene = ScannetppScene_Release(scene_id, data_root=Path(cfg.data_root) / "data")
 
     process_scene_planar_mesh(scene)
+    print(f"Processed planar mesh for scene {scene_id}")
+
     process_scene_planar_mesh_renders(scene, height=cfg.height, width=cfg.width)
+    print(f"Processed planar renders for scene {scene_id}")
+
     process_scene_hdf5(scene, planar_height=cfg.height, planar_width=cfg.width)
+    print(f"Processed planar hdf5 for scene {scene_id}")
 
 
 def main(args):
