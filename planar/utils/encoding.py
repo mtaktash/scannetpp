@@ -23,10 +23,6 @@ def get_planar_colormap(num_planes: int):
 
 
 def decode_planar_colors(colors):
-    plane_ids = (
-        colors[..., 0].astype(np.int64) * 256 * 256
-        + colors[..., 1].astype(np.int64) * 256
-        + colors[..., 2].astype(np.int64)
-    )
+    plane_ids = colors[..., 0] * 256 * 256 + colors[..., 1] * 256 + colors[..., 2]
     plane_ids = plane_ids // 100 - 1  # shift to -1 as no plane
     return plane_ids

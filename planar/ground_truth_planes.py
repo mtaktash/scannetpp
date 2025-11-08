@@ -3,13 +3,13 @@ import json
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-import cv2
 import h5py
 import numpy as np
 import open3d as o3d
 import torch
 import torch.multiprocessing as mp
 import trimesh
+from PIL import Image
 from plyfile import PlyData
 from pytorch3d.renderer import RasterizationSettings, TexturesVertex
 from pytorch3d.structures import Meshes
@@ -17,10 +17,7 @@ from tqdm.auto import tqdm
 
 from common.scene_release import ScannetppScene_Release
 from common.utils.utils import load_json, load_yaml_munch, read_txt_list, run_command
-from planar.utils.encoding import (
-    decode_planar_colors,
-    get_planar_colormap,
-)
+from planar.utils.encoding import decode_planar_colors, get_planar_colormap
 from planar.utils.mesh import planar_segmentation
 from planar.utils.renders import nerfstudio_to_colmap, process_frame
 
@@ -149,20 +146,14 @@ def process_scene_planar_mesh_renders(
     assert len(mesh_trimesh.visual.vertex_colors) == len(verts), "Incorrect mesh colors"
 
     vertex_colors = torch.tensor(mesh_trimesh.visual.vertex_colors, dtype=torch.int64)
-
-    plane_ids = decode_planar_colors(vertex_colors)
-
-    alpha = torch.ones((vertex_colors.shape[0], 1), dtype=torch.float32)
-    alpha[plane_ids == -1] = 0.0  # non-planar regions
-
     rgb = vertex_colors[:, :3] / 255.0
-    vertex_colors_rgba = torch.cat([rgb, alpha], dim=1)
 
     mesh = Meshes(
         verts=[verts],
         faces=[faces],
-        textures=TexturesVertex(verts_features=vertex_colors_rgba.unsqueeze(0)),
+        textures=TexturesVertex(verts_features=rgb.unsqueeze(0)),
     )
+    mesh = mesh.cuda()
 
     raster_settings = RasterizationSettings(
         image_size=(height, width),
@@ -204,15 +195,16 @@ def process_scene_planar_mesh_renders(
     )
 
     K_b44 = torch.tensor(K, dtype=torch.float32).unsqueeze(0)
+    K_b44 = K_b44.cuda()
 
     for split in ["frames", "test_frames"]:
 
         for frame in transforms[split]:
             world_T_cam = np.array(frame["transform_matrix"])
             cam_T_world = nerfstudio_to_colmap(world_T_cam)
-            cam_T_world_b44 = torch.tensor(cam_T_world, dtype=torch.float32).unsqueeze(
-                0
-            )
+            cam_T_world_b44 = torch.tensor(cam_T_world, dtype=torch.float32)
+            cam_T_world_b44 = cam_T_world_b44.unsqueeze(0)
+            cam_T_world_b44 = cam_T_world_b44.cuda()
 
             frame_name = frame["file_path"]
             frame_name = Path(frame_name).stem
@@ -296,15 +288,15 @@ def process_scene_hdf5(
             )
             poses = np.empty((len(frames), 4, 4), dtype=np.float32)
 
-            for i, frame in enumerate(frames):
+            for i, frame in tqdm(enumerate(frames)):
 
                 frame_path = frame["file_path"]
                 frame_name = Path(frame_path).stem
 
                 # Load image
                 img_path = temp_images_dir / frame_path
-                img = cv2.imread(str(img_path))
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                img = Image.open(img_path).convert("RGB")
+                img = np.array(img)
                 images[i] = img
 
                 # Load depth
@@ -315,10 +307,10 @@ def process_scene_hdf5(
                 # Load plane ids
                 plane_render_path = temp_renders_dir / f"{frame_name}_planes.png"
 
-                plane_render = cv2.imread(str(plane_render_path))
-                plane_render = cv2.cvtColor(plane_render, cv2.COLOR_BGR2RGB)
-                plane_colors = plane_render[..., :3].astype(np.int64)
-                plane_ids = decode_planar_colors(plane_colors).astype(np.int16)
+                plane_render = Image.open(plane_render_path).convert("RGB")
+                plane_render = np.array(plane_render)
+                plane_colors = plane_render.astype(np.int64)
+                plane_ids = decode_planar_colors(plane_colors)
                 planes[i] = plane_ids
 
                 # Load pose
@@ -370,12 +362,15 @@ def main(args):
         exclude_scene_ids = read_txt_list(cfg.scene_exclude_list_file)
         scene_ids = [sid for sid in scene_ids if sid not in exclude_scene_ids]
 
-    with ProcessPoolExecutor(max_workers=4) as executor:
-        futures = {
-            executor.submit(process_one_scene, sid, cfg): sid for sid in scene_ids
-        }
-        for f in tqdm(as_completed(futures), total=len(futures), desc="scene"):
-            f.result()
+    for sid in tqdm(scene_ids, desc="scene"):
+        process_one_scene(sid, cfg)
+
+    # with ProcessPoolExecutor(max_workers=4) as executor:
+    #     futures = {
+    #         executor.submit(process_one_scene, sid, cfg): sid for sid in scene_ids
+    #     }
+    #     for f in tqdm(as_completed(futures), total=len(futures), desc="scene"):
+    #         f.result()
 
 
 if __name__ == "__main__":

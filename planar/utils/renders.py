@@ -84,6 +84,7 @@ def nerfstudio_to_colmap(c2w: np.ndarray):
     return w2c
 
 
+@torch.no_grad()
 def process_frame(
     mesh: Meshes,
     cam_T_world_b44: torch.Tensor,
@@ -114,9 +115,6 @@ def process_frame(
         R=R, tvec=T, camera_matrix=K, image_size=image_size
     )
 
-    mesh = mesh.cuda()
-    cams = cams.cuda()
-
     rasterizer = MeshRasterizer(
         cameras=cams,
         raster_settings=raster_settings,
@@ -134,20 +132,13 @@ def process_frame(
     texture_bhw14 = interpolate_face_attributes_nearest(
         fragments.pix_to_face, fragments.bary_coords, faces_verts_features
     )
-
-    # bilinear sampling
-    bilinear_texture_bhw14 = _mesh.textures.sample_textures(
-        fragments, _mesh.faces_packed()
-    )
     rendered_depth_bhw = fragments.zbuf[..., 0]
 
-    # we want nearest for RGB and bilinear for alpha - so combine
-    texture_bhw14[..., 3] = bilinear_texture_bhw14[..., 3]
-    plane_ids = texture_bhw14.cpu().numpy()[0, ..., 0, :] * 255
+    plane_ids = texture_bhw14.cpu().numpy()[0, ..., 0, :]
     rendered_depth = rendered_depth_bhw.cpu().numpy().squeeze()
 
     # save image with plane ids
-    plane_ids = plane_ids.astype("uint8")
+    plane_ids = (plane_ids * 255).astype(np.uint8)
     plane_ids = Image.fromarray(plane_ids)
     plane_ids.save(save_path / f"{frame_name}_planes.png")
 
