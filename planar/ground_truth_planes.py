@@ -289,7 +289,7 @@ def process_scene_hdf5(
             )
             poses = np.empty((len(frames), 4, 4), dtype=np.float32)
 
-            for i, frame in tqdm(enumerate(frames)):
+            for i, frame in enumerate(frames):
 
                 frame_path = frame["file_path"]
                 frame_name = Path(frame_path).stem
