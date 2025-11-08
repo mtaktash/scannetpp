@@ -332,7 +332,16 @@ def process_scene_hdf5(
     run_command(f"rm -rf {temp_renders_dir}", verbose=True)
 
 
+def setup_logger():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(processName)s] [%(levelname)s] %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+
 def process_one_scene(scene_id, cfg):
+    setup_logger()
     log = logging.getLogger(__name__)
     log.info(f"Processing scene {scene_id}")
 
@@ -366,15 +375,15 @@ def main(args):
         exclude_scene_ids = read_txt_list(cfg.scene_exclude_list_file)
         scene_ids = [sid for sid in scene_ids if sid not in exclude_scene_ids]
 
-    for sid in tqdm(scene_ids, desc="scene"):
-        process_one_scene(sid, cfg)
+    # for sid in tqdm(scene_ids, desc="scene"):
+    #     process_one_scene(sid, cfg)
 
-    # with ProcessPoolExecutor(max_workers=4) as executor:
-    #     futures = {
-    #         executor.submit(process_one_scene, sid, cfg): sid for sid in scene_ids
-    #     }
-    #     for f in tqdm(as_completed(futures), total=len(futures), desc="scene"):
-    #         f.result()
+    with ProcessPoolExecutor(max_workers=4) as executor:
+        futures = {
+            executor.submit(process_one_scene, sid, cfg): sid for sid in scene_ids
+        }
+        for f in tqdm(as_completed(futures), total=len(futures), desc="scene"):
+            f.result()
 
 
 if __name__ == "__main__":
@@ -383,11 +392,4 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("config_file", help="Path to config file")
     args = p.parse_args()
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%H:%M:%S",
-    )
-
     main(args)
