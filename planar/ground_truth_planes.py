@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -332,16 +333,19 @@ def process_scene_hdf5(
 
 
 def process_one_scene(scene_id, cfg):
+    log = logging.getLogger(__name__)
+    log.info(f"Processing scene {scene_id}")
+
     scene = ScannetppScene_Release(scene_id, data_root=Path(cfg.data_root) / "data")
 
     process_scene_planar_mesh(scene)
-    print(f"Processed planar mesh for scene {scene_id}")
+    log.info(f"Finished processing mesh for scene {scene_id}")
 
     process_scene_planar_mesh_renders(scene, height=cfg.height, width=cfg.width)
-    print(f"Processed planar renders for scene {scene_id}")
+    log.info(f"Finished processing renders for scene {scene_id}")
 
     process_scene_hdf5(scene, planar_height=cfg.height, planar_width=cfg.width)
-    print(f"Processed planar hdf5 for scene {scene_id}")
+    log.info(f"Finished processing hdf5 for scene {scene_id}")
 
 
 def main(args):
@@ -379,5 +383,11 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("config_file", help="Path to config file")
     args = p.parse_args()
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%H:%M:%S",
+    )
 
     main(args)
