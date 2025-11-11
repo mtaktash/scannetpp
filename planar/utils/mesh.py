@@ -1,7 +1,6 @@
 from collections import deque, Counter
 
 import numpy as np
-import open3d as o3d
 
 
 def planar_segmentation(

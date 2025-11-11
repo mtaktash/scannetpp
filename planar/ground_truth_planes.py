@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -347,14 +348,17 @@ def process_one_scene(scene_id, cfg):
 
     scene = ScannetppScene_Release(scene_id, data_root=Path(cfg.data_root) / "data")
 
-    process_scene_planar_mesh(scene)
-    log.info(f"Finished processing mesh for scene {scene_id}")
+    try:
+        process_scene_planar_mesh(scene)
+        log.info(f"Finished processing mesh for scene {scene_id}")
 
-    process_scene_planar_mesh_renders(scene, height=cfg.height, width=cfg.width)
-    log.info(f"Finished processing renders for scene {scene_id}")
+        process_scene_planar_mesh_renders(scene, height=cfg.height, width=cfg.width)
+        log.info(f"Finished processing renders for scene {scene_id}")
 
-    process_scene_hdf5(scene, planar_height=cfg.height, planar_width=cfg.width)
-    log.info(f"Finished processing hdf5 for scene {scene_id}")
+        process_scene_hdf5(scene, planar_height=cfg.height, planar_width=cfg.width)
+        log.info(f"Finished processing hdf5 for scene {scene_id}")
+    except Exception as e:
+        log.error(f"Error processing scene {scene_id}: {e}")
 
 
 def main(args):
@@ -371,18 +375,26 @@ def main(args):
             split_path = Path(cfg.data_root) / "splits" / f"{split}.txt"
             scene_ids += read_txt_list(split_path)
 
+    # partition the scenes
+    scene_ids = sorted(scene_ids)
+    task_id = int(os.getenv("SLURM_ARRAY_TASK_ID", "0"))
+    num_tasks = int(os.getenv("SLURM_ARRAY_TASK_COUNT", "1"))
+    scene_ids = np.array_split(scene_ids, num_tasks)[task_id - 1].tolist()
+
     if cfg.get("scene_exclude_list_file"):
         exclude_scene_ids = read_txt_list(cfg.scene_exclude_list_file)
         scene_ids = [sid for sid in scene_ids if sid not in exclude_scene_ids]
 
-    # for sid in tqdm(scene_ids, desc="scene"):
+    # for sid in tqdm(scene_ids, desc=f"scene, task id {task_id}"):
     #     process_one_scene(sid, cfg)
 
     with ProcessPoolExecutor(max_workers=4) as executor:
         futures = {
             executor.submit(process_one_scene, sid, cfg): sid for sid in scene_ids
         }
-        for f in tqdm(as_completed(futures), total=len(futures), desc="scene"):
+        for f in tqdm(
+            as_completed(futures), total=len(futures), desc=f"scene, task id {task_id}"
+        ):
             f.result()
 
 
